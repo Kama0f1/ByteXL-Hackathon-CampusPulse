@@ -1,8 +1,8 @@
-import type { DataResult, InterventionStatus, RiskDomain } from "@/lib/types";
+import { cache } from "react";
+import { API_BASE_URL } from "@/lib/config";
+import type { DataResult } from "@/lib/types";
 
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-).replace(/\/+$/, "");
+export { API_BASE_URL };
 
 export type HealthResponse = { status: string; students?: number };
 
@@ -16,40 +16,29 @@ export async function apiGet<T>(path: string): Promise<T> {
   return response.json();
 }
 
+/** Whether the backend is up, checked once per page render so every payload on a page agrees. */
+const backendUp = cache(async (): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/health`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+});
+
 /**
- * Live data from the backend, or the simulated demo campus if the backend is unreachable.
- * The `origin` tells the UI which one it is showing.
+ * Live data from the backend, or the simulated demo campus when the backend is down.
+ * The choice is made once per render, so a page never mixes live students with demo ones:
+ * if the backend is up but one endpoint fails, the error is raised (shown by app/(app)/error.tsx).
  */
 export async function withFallback<T>(path: string, demo: () => T): Promise<DataResult<T>> {
-  try {
-    return { origin: "api", data: await apiGet<T>(path) };
-  } catch (error) {
-    if (error instanceof NotFoundError) throw error;
-    console.warn(`[CampusPulse] ${path}: backend unavailable, showing demo data.`, error instanceof Error ? error.message : error);
+  if (!(await backendUp())) {
+    console.warn(`[CampusPulse] backend unavailable at ${API_BASE_URL}, showing demo data.`);
     return { origin: "demo", data: demo() };
   }
+  return { origin: "api", data: await apiGet<T>(path) };
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
   return apiGet<HealthResponse>("/api/health");
-}
-
-/* Browser-side writes. Only called when the page is showing live data. */
-
-async function send<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new Error(`${method} ${path} failed (${response.status})`);
-  return response.json();
-}
-
-export function moveIntervention(interventionId: string, status: InterventionStatus) {
-  return send<{ interventionId: string; status: InterventionStatus }>("PATCH", `/api/interventions/${encodeURIComponent(interventionId)}`, { status });
-}
-
-export function createIntervention(body: { studentId: string; label?: string; domain?: RiskDomain; owner?: string; status?: InterventionStatus }) {
-  return send<{ interventionId: string; status: InterventionStatus }>("POST", "/api/interventions", body);
 }

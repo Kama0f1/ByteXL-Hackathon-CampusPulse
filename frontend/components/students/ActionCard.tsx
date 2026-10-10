@@ -4,7 +4,7 @@ import { CheckIcon, LightningIcon } from "@phosphor-icons/react/dist/ssr";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { buttonClass } from "@/components/ui/Button";
-import { createIntervention } from "@/lib/api";
+import { createIntervention } from "@/lib/api-client";
 import { DOMAIN_LABEL } from "@/lib/labels";
 import type { StudentProfile } from "@/lib/types";
 

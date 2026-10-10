@@ -17,8 +17,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { RiskBadge } from "@/components/ui/RiskBadge";
 import { Segmented } from "@/components/ui/Segmented";
 import { formatSignedInt } from "@/lib/format";
-import { LEVEL_ORDER } from "@/lib/labels";
-import type { StudentRow } from "@/lib/types";
+import { LEVEL_LABEL, LEVEL_ORDER } from "@/lib/labels";
+import type { RiskLevel, StudentRow } from "@/lib/types";
 
 export type RiskFilter = "all" | "any-high" | "academic-high" | "placement-high" | "both-high";
 type SortKey = "name" | "successScore" | "scoreChange" | "academicRisk" | "placementRisk" | "placementProbability" | "attendancePct" | "cgpa";
@@ -47,7 +47,11 @@ type StudentsExplorerProps = {
   segments: { segmentId: string; name: string }[];
   initialRisk?: RiskFilter;
   initialSegment?: string;
+  /** Exact academic x placement cell, from the risk matrix's "See all" link. */
+  initialCell?: RiskCell | null;
 };
+
+export type RiskCell = { academic: RiskLevel; placement: RiskLevel };
 
 function matchesRisk(row: StudentRow, risk: RiskFilter) {
   switch (risk) {
@@ -64,12 +68,13 @@ function matchesRisk(row: StudentRow, risk: RiskFilter) {
   }
 }
 
-export function StudentsExplorer({ rows, departments, segments, initialRisk = "all", initialSegment = "all" }: StudentsExplorerProps) {
+export function StudentsExplorer({ rows, departments, segments, initialRisk = "all", initialSegment = "all", initialCell = null }: StudentsExplorerProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [department, setDepartment] = useState("all");
   const [risk, setRisk] = useState<RiskFilter>(initialRisk);
   const [segment, setSegment] = useState(initialSegment);
+  const [cell, setCell] = useState<RiskCell | null>(initialCell);
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "successScore", dir: "asc" });
   const [page, setPage] = useState(0);
   const [quick, setQuick] = useState<QuickKey[]>([]);
@@ -84,6 +89,7 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
         (department === "all" || r.department === department) &&
         (segment === "all" || r.segmentId === segment) &&
         matchesRisk(r, risk) &&
+        (!cell || (r.academicRisk === cell.academic && r.placementRisk === cell.placement)) &&
         quick.every((key) => QUICK_FILTERS.find((f) => f.key === key)!.test(r)),
     );
     const dir = sort.dir === "asc" ? 1 : -1;
@@ -91,14 +97,14 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
       const k = sort.key;
       if (k === "name") return a.name.localeCompare(b.name) * dir;
       if (k === "academicRisk" || k === "placementRisk") return (LEVEL_ORDER[a[k]] - LEVEL_ORDER[b[k]]) * dir || a.successScore - b.successScore;
-      return (a[k] - b[k]) * dir;
+      return ((a[k] ?? -1) - (b[k] ?? -1)) * dir; // a missing model probability sorts as lowest
     });
-  }, [rows, query, department, segment, risk, sort, quick]);
+  }, [rows, query, department, segment, risk, cell, sort, quick]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, pageCount - 1);
   const visible = filtered.slice(current * PAGE_SIZE, current * PAGE_SIZE + PAGE_SIZE);
-  const filtersActive = query || department !== "all" || risk !== "all" || segment !== "all" || quick.length > 0;
+  const filtersActive = query || department !== "all" || risk !== "all" || segment !== "all" || cell !== null || quick.length > 0;
 
   function update<T>(setter: (v: T) => void) {
     return (v: T) => {
@@ -114,7 +120,7 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
   function exportCsv() {
     const header = ["student_id", "name", "department", "semester", "mentor", "success_score", "score_change_4wk", "academic_risk", "placement_risk", "segment", "cgpa", "attendance_pct", "lms_completion_pct", "coding_score", "placement_probability"];
     const lines = filtered.map((r) =>
-      [r.studentId, r.name, r.department, r.semester, r.mentor, r.successScore, r.scoreChange, r.academicRisk, r.placementRisk, segmentName.get(r.segmentId) ?? r.segmentId, r.cgpa, r.attendancePct, r.lmsCompletionPct, r.codingScore, r.placementProbability]
+      [r.studentId, r.name, r.department, r.semester, r.mentor, r.successScore, r.scoreChange, r.academicRisk, r.placementRisk, segmentName.get(r.segmentId) ?? r.segmentId, r.cgpa, r.attendancePct, r.lmsCompletionPct, r.codingScore, r.placementProbability ?? ""]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(","),
     );
@@ -205,6 +211,17 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
               </option>
             ))}
           </select>
+          {cell ? (
+            <button
+              type="button"
+              onClick={() => update(setCell)(null)}
+              aria-label="Remove risk cell filter"
+              className="pressable inline-flex h-7 items-center gap-1.5 rounded-full border border-inverse bg-inverse px-3 text-xs font-medium text-on-inverse"
+            >
+              <XIcon aria-hidden="true" className="h-3 w-3" />
+              Academic {LEVEL_LABEL[cell.academic].toLowerCase()}, placement {LEVEL_LABEL[cell.placement].toLowerCase()}
+            </button>
+          ) : null}
           {filtersActive ? (
             <button
               type="button"
@@ -213,6 +230,7 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
                 setDepartment("all");
                 setRisk("all");
                 setSegment("all");
+                setCell(null);
                 setQuick([]);
                 setPage(0);
               }}
@@ -294,8 +312,11 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
                   <td className="px-3 py-2.5">
                     <RiskBadge level={r.placementRisk} />
                   </td>
-                  <td className={`tabular px-3 py-2.5 text-right ${r.placementProbability < 0.4 ? "font-semibold text-risk-high-ink" : "text-ink-2"}`}>
-                    {Math.round(r.placementProbability * 100)}%
+                  <td
+                    className={`tabular px-3 py-2.5 text-right ${r.placementProbability !== null && r.placementProbability < 0.4 ? "font-semibold text-risk-high-ink" : "text-ink-2"}`}
+                    title={r.placementProbability === null ? "Placement model unavailable" : undefined}
+                  >
+                    {r.placementProbability === null ? "n/a" : `${Math.round(r.placementProbability * 100)}%`}
                   </td>
                   <td className={`tabular px-3 py-2.5 text-right ${r.attendancePct < 75 ? "font-semibold text-risk-high-ink" : "text-ink-2"}`}>
                     {r.attendancePct}%

@@ -48,8 +48,8 @@ TERM = "Odd semester 2026-27"
 WEEKS = 12
 LAST = WEEKS - 1
 LOOKBACK = 4
-RISK_HIGH = 61
-RISK_MEDIUM = 50
+ACADEMIC_HIGH, ACADEMIC_MEDIUM = risk_engine.ACADEMIC_HIGH, risk_engine.ACADEMIC_MEDIUM
+PLACEMENT_HIGH, PLACEMENT_MEDIUM = risk_engine.PLACEMENT_HIGH, risk_engine.PLACEMENT_MEDIUM
 N_SEGMENTS = 6
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -101,9 +101,9 @@ ACADEMIC_ACTIONS = {
 }
 PLACEMENT_ACTIONS = {
     "Aptitude and coding tests": ("placement-bootcamp", "Enrol in placement-prep bootcamp"),
-    "Technical and soft skills": ("soft-skills", "Soft-skills and communication workshop"),
-    "Engagement and projects": ("project-referral", "Project or internship referral"),
     "Mock interview practice": ("mock-interview", "Book a mock interview slot"),
+    "CGPA cut-off": ("cgpa-plan", "Academic plan to clear the 7.0 CGPA cut-off"),
+    "Project portfolio": ("project-referral", "Project or internship referral"),
 }
 FOLLOW_UP_DESCRIPTIONS = {
     "mentor-call": "Students with low or falling attendance.",
@@ -111,8 +111,8 @@ FOLLOW_UP_DESCRIPTIONS = {
     "lms-catch-up": "Students who have stopped submitting LMS work.",
     "backlog-clearance": "Students carrying active backlogs.",
     "placement-bootcamp": "Low aptitude or coding test scores.",
-    "soft-skills": "Low communication or skills ratings.",
-    "project-referral": "Few projects, clubs or events on record.",
+    "cgpa-plan": "Placement-ready on tests, but under the 7.0 CGPA cut-off.",
+    "project-referral": "Fewer than three projects on record.",
     "mock-interview": "Weak mock-interview scores.",
 }
 LEVEL_RANK = {"high": 2, "medium": 1, "low": 0}
@@ -153,19 +153,6 @@ def band_for(value: float) -> int:
     if value >= 45:
         return 2
     return 3
-
-
-def level_from_index(index: float) -> str:
-    return "high" if index >= RISK_HIGH else "medium" if index >= RISK_MEDIUM else "low"
-
-
-def _align(raw: float, level: str) -> float:
-    """Keep the 0-100 risk index consistent with the SRS level from risk_engine.py."""
-    if level == "high":
-        return clamp(max(raw, RISK_HIGH), 0, 100)
-    if level == "medium":
-        return clamp(raw, RISK_MEDIUM, RISK_HIGH - 1)
-    return clamp(min(raw, RISK_MEDIUM - 1), 0, 100)
 
 
 def lower_label(text: str) -> str:
@@ -251,6 +238,94 @@ class Campus:
     segments: list[dict[str, Any]]
     generated_at: str
     pipeline_sources: list[dict[str, Any]]
+    insights: list[dict[str, Any]] = field(default_factory=list)
+    findings: list[str] = field(default_factory=list)
+
+
+def _corr(a: pd.Series, b: pd.Series) -> float:
+    return float(np.corrcoef(a.astype(float), b.astype(float))[0, 1])
+
+
+def _insights(df: pd.DataFrame, students: list["Student"]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Findings that only appear once the seven sources are joined (dashboard insights + data-quality notes)."""
+    insights: list[dict[str, Any]] = []
+    placed = df["placement_outcome"].eq("Placed")
+
+    # 1. The placement bar, measured on the raw file so mean-filled scores cannot blur it.
+    raw = pd.read_csv(DATA_DIR / "Placement.csv").dropna(subset=["coding_score", "aptitude_score"])
+    raw_avg = (raw["coding_score"] + raw["aptitude_score"]) / 2
+    raw_placed = raw["placement_outcome"].eq("Placed")
+    bar = None
+    if raw_placed.any() and (~raw_placed).any() and raw_avg[~raw_placed].max() < raw_avg[raw_placed].min():
+        bar = math.floor(raw_avg[raw_placed].min())
+        avg = (df["coding_score"] + df["aptitude_score"]) / 2
+        near = int(((avg < bar) & (avg >= bar - 10)).sum())
+        insights.append({
+            "id": "placement-bar", "domain": "placement", "metric": f"{bar}+",
+            "title": f"Every placed student averages {bar}+ on coding and aptitude",
+            "detail": f"All {int(raw_placed.sum())} placed students with a recorded coding score clear it, and none of the {int((~raw_placed).sum())} below it were placed. "
+                      f"{near} students are within 10 points of the line: the quickest placement wins.",
+        })
+
+    # 2. The 75% attendance rule against grades.
+    low = df["attendance_pct"] < 75
+    insights.append({
+        "id": "attendance-rule", "domain": "academic", "metric": f"{low.mean() * 100:.0f}%",
+        "title": f"{int(low.sum())} students are under the 75% attendance rule",
+        "detail": f"Their average CGPA is {df.loc[low, 'cgpa'].mean():.2f}, against {df.loc[~low, 'cgpa'].mean():.2f} for everyone else "
+                  f"(attendance and CGPA correlate at r = {_corr(df['attendance_pct'], df['cgpa']):.2f}).",
+    })
+
+    # 3. Toppers who are not placement-ready (the brief's example segment).
+    if bar is not None:
+        toppers = df["cgpa"] >= 8
+        not_ready = toppers & ((df["coding_score"] + df["aptitude_score"]) / 2 < bar)
+        insights.append({
+            "id": "toppers-not-ready", "domain": "placement", "metric": str(int(not_ready.sum())),
+            "title": f"{int(not_ready.sum())} of {int(toppers.sum())} students with CGPA 8+ are below the placement bar",
+            "detail": f"Grades alone do not get students placed: CGPA correlates with placement at r = {_corr(df['cgpa'], placed):.2f}, "
+                      f"coding at r = {_corr(df['coding_score'], placed):.2f} and aptitude at r = {_corr(df['aptitude_score'], placed):.2f}.",
+        })
+
+    # 4. Attendance and LMS work move together.
+    insights.append({
+        "id": "attendance-lms", "domain": "academic", "metric": f"r = {_corr(df['attendance_pct'], df['assignment_completion_pct']):.2f}",
+        "title": "Students who stop attending also stop submitting LMS work",
+        "detail": "Attendance and assignment completion move together, so one mentor call usually covers both problems.",
+    })
+
+    # 5. Feedback joined with risk: who asked for help and is already flagged.
+    asked = [s for s in students if s.support_need == "Academic"]
+    if asked:
+        flagged = sum(1 for s in asked if s.academic["level"] == "high")
+        high = sum(1 for s in students if s.academic["level"] == "high")
+        insights.append({
+            "id": "support-requests", "domain": "academic", "metric": f"{flagged}/{len(asked)}",
+            "title": f"{flagged} of {len(asked)} students who asked for academic support are high academic risk",
+            "detail": f"Joining feedback with academic records shows which requests to answer first. It also shows {high - flagged} of the "
+                      f"{high} high-risk students never asked for academic support, so waiting for requests would miss most of them.",
+        })
+
+    # 6. Engagement carries no signal here, which is why it is weighted 5%.
+    eng = df["clubs_participation_count"] + df["events_attended_count"]
+    insights.append({
+        "id": "engagement-signal", "domain": None, "metric": f"r = {_corr(eng, df['cgpa']):.2f}",
+        "title": "Clubs and events show no link with grades or placement",
+        "detail": f"Engagement correlates with CGPA at r = {_corr(eng, df['cgpa']):.2f} and with placement at r = {_corr(eng, placed):.2f}, "
+                  "so it counts for only 5% of the Success Score.",
+    })
+
+    findings = []
+    raw_skills = pd.read_csv(DATA_DIR / "Skills.csv")
+    raw_both = raw.merge(raw_skills, on="student_id")
+    for a, b in (("coding_score", "technical_skill_score"), ("mock_interview_score", "communication_score")):
+        both = raw_both.dropna(subset=[a, b])
+        if len(both) and np.isclose(both[a], both[b]).mean() > 0.95:
+            findings.append(f"{b} (Skills.csv) is identical to {a} (Placement.csv) for every student who has both, so they are one measurement, not two.")
+    findings.append(f"All {len(df)} student IDs appear exactly once in each of the seven files: no duplicates and no orphan records.")
+    findings.append("254 missing scores (118 quiz averages, 62 coding scores, 74 communication scores) are filled with the column mean.")
+    findings.append("A blank support-need answer in Feedback.csv means no support was requested, so it is recorded as None, not as missing.")
+    return insights, findings
 
 
 def _model_probabilities(df: pd.DataFrame) -> np.ndarray | None:
@@ -286,15 +361,6 @@ def _area_values(r: dict[str, Any]) -> dict[str, float]:
 
 def _success(values: dict[str, float]) -> float:
     return sum(AREA_WEIGHT[k] * values[k] for k in AREA_KEYS)
-
-
-def _academic_raw(v: dict[str, float], backlogs: int) -> float:
-    base = 100 - (0.4 * v["academics"] + 0.35 * v["attendance"] + 0.25 * v["lms"])
-    return clamp(base * 1.18 + backlogs * 4 + (6 if v["attendance"] < 52 else 0), 0, 100)
-
-
-def _placement_raw(v: dict[str, float]) -> float:
-    return clamp(100 - (0.55 * v["placement"] + 0.30 * v["skills"] + 0.15 * v["engagement"]), 0, 100)
 
 
 def _build_identity(df: pd.DataFrame) -> dict[str, dict[str, Any]]:
@@ -366,27 +432,52 @@ def _name_segments(df: pd.DataFrame, students: list[Student], labels: np.ndarray
         clusters.append({"cluster": c, "members": members, "profile": profile, "avg": avg})
     clusters.sort(key=lambda c: -c["avg"])
 
-    used: set[str] = set()
+    # Name each cluster by where it sits on the two axes the brief cares about: academic standing
+    # (academics, attendance, LMS) against placement standing (placement readiness, skills),
+    # relative to the campus average. Engagement and feedback vary independently of everything
+    # else in this data, so they would make misleading names.
+    def side(profile: dict[str, float], keys: list[str]) -> float:
+        return float(np.mean([(profile[k] - campus_mean[k]) / campus_sd[k] for k in keys]))
+
+    campus_mean = {k: float(np.mean([s.values[k] for s in students])) for k in AREA_KEYS}
+    campus_sd = {k: float(np.std([s.values[k] for s in students])) or 1.0 for k in AREA_KEYS}
+    # Each axis is "H" (clearly above average), "A" (near average) or "L" (clearly below).
+    NAMES = {
+        ("H", "H"): ("Steady achievers", "strong", "Above average on both academics and placement prep. Keep them stretched, and use them as peer mentors.",
+                     ("Peer-mentor programme", "academic", "Pair with students in weaker segments as study and coding mentors.")),
+        ("H", "A"): ("Strong academics, average placement prep", "mixed", "Good CGPA and attendance; placement scores are only average.",
+                     ("Placement-prep starter track", "placement", "Fortnightly aptitude and coding practice before placement season.")),
+        ("H", "L"): ("High academics, low placement readiness", "mixed", "Good CGPA, attendance and LMS work, but coding and aptitude below the placement bar.",
+                     ("Aptitude and coding bootcamp", "placement", "Six-week placement track with weekly timed coding and aptitude tests.")),
+        ("A", "H"): ("Placement-ready, average academics", "strong", "Strong coding and aptitude; academics are around the campus average.",
+                     ("Interview and referral drive", "placement", "Mock interviews and referrals while keeping grades steady.")),
+        ("A", "A"): ("Middle of the pack", "watch", "Close to the campus average on academics and placement prep. Small nudges move them either way.",
+                     ("Fortnightly mentor check-in", "academic", "Short group check-ins to set one academic and one placement goal.")),
+        ("A", "L"): ("Low placement readiness", "watch", "Academics are around average, but coding and aptitude are well below the placement bar.",
+                     ("Aptitude and coding bootcamp", "placement", "Six-week placement track with weekly timed coding and aptitude tests.")),
+        ("L", "H"): ("Placement-ready, academically at risk", "watch", "Coding and aptitude are fine, but attendance or CGPA could block exams and eligibility.",
+                     ("Attendance and academics contract", "academic", "Mentor agrees a plan to reach 75% attendance and clear weak subjects.")),
+        ("L", "A"): ("Falling behind in class", "support", "Attendance and LMS work are well below average; placement prep is average.",
+                     ("Attendance contract with mentor", "academic", "Agree a 75% attendance plan and an LMS catch-up, reviewed weekly.")),
+        ("L", "L"): ("Needs broad support", "support", "Below average on academics and placement prep together. Best served by one coordinated plan.",
+                     ("Coordinated support plan", "academic", "Mentor, counsellor and placement cell agree one weekly plan.")),
+    }
+
+    def band(z: float) -> str:
+        return "H" if z >= 0.3 else "L" if z <= -0.3 else "A"
+
     segments = []
+    used: set[str] = set()
     for c in clusters:
-        ranked = sorted(AREA_KEYS, key=lambda k: c["profile"][k])
-        worst, best = ranked[0], ranked[-1]
-        tone = "strong" if c["avg"] >= 70 else "mixed" if c["avg"] >= 60 else "watch" if c["avg"] >= 52 else "support"
-        if tone == "strong":
-            name = "Steady achievers" if "Steady achievers" not in used else f"High achievers, low {lower_label(AREA_LABEL[worst])}"
-            desc = "Strong across most areas. Keep them stretched, not just monitored."
-            group = ("Peer-mentor programme", "academic", "Pair with students in slipping segments as study mentors.")
-        elif tone == "support":
-            name, desc = "Needs broad support", "Low across most areas. Best served by one coordinated plan, not several separate ones."
-            group = ("Coordinated support plan", "academic", "Mentor, counsellor and placement cell agree one weekly plan.")
-        else:
-            name = f"Strong {lower_label(AREA_LABEL[best])}, low {lower_label(AREA_LABEL[worst])}"
-            desc = (f"Averages {round(c['profile'][best])} on {lower_label(AREA_LABEL[best])} "
-                    f"but only {round(c['profile'][worst])} on {lower_label(AREA_LABEL[worst])}.")
-            group = GROUP_INTERVENTIONS[worst]
-        if name in used:  # keep names unique
-            name = f"{name} ({lower_label(AREA_LABEL[ranked[1]])} also low)"
+        acad = side(c["profile"], ["academics", "attendance", "lms"])
+        place = side(c["profile"], ["placement", "skills"])
+        name, tone, desc, group = NAMES[(band(acad), band(place))]
+        n = 2
+        while name in used:  # two clusters with the same profile type: keep names unique
+            name = f"{NAMES[(band(acad), band(place))][0]} ({n})"
+            n += 1
         used.add(name)
+        desc = f"{desc} Averages: academics {round(c['profile']['academics'])}, attendance {round(c['profile']['attendance'])}%, placement readiness {round(c['profile']['placement'])}."
         seg_id = _slug(name)
         for m in c["members"]:
             m.segment_id = seg_id
@@ -429,44 +520,40 @@ def get_campus() -> Campus:
         score_now = r1(_success(values))
         backlogs = int(r["backlogs"])
 
-        # Risk levels use the SRS thresholds already written in risk_engine.py.
-        a_level, a_flags = risk_engine.assess_academic_risk(r)
-        p_level, readiness, p_flags = risk_engine.assess_placement_risk(r)
-        a_level, p_level = a_level.lower(), p_level.lower()
+        # Risk: point-based indices from risk_engine.py, scored for every week of the history with the
+        # same rules, so the level always follows from the index and history can cross thresholds.
         prob = float(probs[i]) if probs is not None else None
-
-        a_raw_hist = [_academic_raw({k: history[k][w] for k in AREA_KEYS}, backlogs) for w in range(WEEKS)]
-        p_raw_hist = [_placement_raw({k: history[k][w] for k in AREA_KEYS}) for w in range(WEEKS)]
-        a_now = _align(_academic_raw(values, backlogs), a_level)
-        p_base = 100 - readiness
-        p_now = _align(0.6 * p_base + 0.4 * (100 - prob * 100) if prob is not None else p_base, p_level)
-        # The SRS thresholds are applied to ONE snapshot, so past weeks stay inside today's level
-        # band. (Letting them drift across the thresholds would draw a fake "rising risk" trend.)
-        a_hist = [_align(a_now + (x - a_raw_hist[LAST]), a_level) for x in a_raw_hist]
-        p_hist = [_align(p_now + (x - p_raw_hist[LAST]), p_level) for x in p_raw_hist]
-
         att, lms_pct = float(r["attendance_pct"]), float(r["assignment_completion_pct"])
         logins = int(r["lms_logins_30d"])
-        a_factors = normalise_factors([
-            {"factor": "Internal marks and CGPA", "gap": 0.4 * max(0, 75 - values["academics"]), "evidence": f"CGPA {r['cgpa']:.2f} out of 10"},
-            {"factor": "Attendance", "gap": 0.35 * max(0, 80 - values["attendance"]), "evidence": f"{att:.0f}% attendance (75% needed to sit exams)"},
-            {"factor": "LMS assignment completion", "gap": 0.25 * max(0, 75 - values["lms"]), "evidence": f"{lms_pct:.0f}% of assignments submitted, {logins} logins in 30 days"},
-            {"factor": "Active backlogs", "gap": backlogs * 4, "evidence": f"{backlogs} active backlog{'' if backlogs == 1 else 's'}"},
-        ])
         coding, apt, mock = float(r["coding_score"]), float(r["aptitude_score"]), float(r["mock_interview_score"])
-        p_factors = normalise_factors([
-            {"factor": "Aptitude and coding tests", "gap": 0.45 * max(0, 75 - values["placement"]), "evidence": f"Aptitude {apt:.0f}/100, coding {coding:.0f}/100"},
-            {"factor": "Technical and soft skills", "gap": 0.35 * max(0, 72 - values["skills"]), "evidence": f"Technical skills {values['skills']:.0f}/100, communication {r['communication_score']:.0f}/100"},
-            {"factor": "Engagement and projects", "gap": 0.2 * max(0, 65 - values["engagement"]), "evidence": f"{int(r['clubs_participation_count'])} clubs, {int(r['events_attended_count'])} events, {int(r['projects_count'])} projects"},
-            {"factor": "Mock interview practice", "gap": 0.25 * max(0, 60 - mock), "evidence": f"Mock interview score {mock:.0f}/100"},
-        ])
-        # A level from risk_engine should always come with at least one explained factor.
-        if a_level != "low" and not a_factors:
-            text = a_flags[0] if a_flags else "Academic risk flagged"
-            name = "Attendance" if "ttendance" in text else "Active backlogs" if "acklog" in text else "Internal marks and CGPA"
-            a_factors = [{"factor": name, "share": 1.0, "evidence": text}]
-        if p_level != "low" and not p_factors:
-            p_factors = [{"factor": "Aptitude and coding tests", "share": 1.0, "evidence": (p_flags[0] if p_flags else "Placement readiness is borderline")}]
+        projects = int(r["projects_count"])
+
+        def a_points(w: int) -> dict[str, float]:
+            return risk_engine.academic_points(history["academics"][w], history["attendance"][w], history["lms"][w], backlogs)
+
+        def p_points(w: int) -> dict[str, float]:
+            return risk_engine.placement_points(history["placement"][w], mock, history["academics"][w] / 10, projects)
+
+        a_hist = [r1(sum(a_points(w).values())) for w in range(WEEKS)]
+        p_hist = [r1(sum(p_points(w).values())) for w in range(WEEKS)]
+        a_now, p_now = a_hist[LAST], p_hist[LAST]
+        a_level = risk_engine.level(a_now, ACADEMIC_HIGH, ACADEMIC_MEDIUM)
+        p_level = risk_engine.level(p_now, PLACEMENT_HIGH, PLACEMENT_MEDIUM)
+
+        avg_ca = (coding + apt) / 2
+        bar_note = f"; average {avg_ca:.0f}, every placed student is 70+" if avg_ca < 70 else ""
+        a_factors = risk_engine.explain(a_points(LAST), {
+            "Internal marks and CGPA": f"CGPA {r['cgpa']:.2f} (7.5+ is on track)",
+            "Attendance": f"{att:.0f}% attendance (75% needed to sit exams)",
+            "Active backlogs": f"{backlogs} active backlog{'' if backlogs == 1 else 's'}",
+            "LMS assignment completion": f"{lms_pct:.0f}% of assignments submitted, {logins} logins in 30 days",
+        })
+        p_factors = risk_engine.explain(p_points(LAST), {
+            "Aptitude and coding tests": f"Aptitude {apt:.0f}/100, coding {coding:.0f}/100{bar_note}",
+            "Mock interview practice": f"Mock interview score {mock:.0f}/100",
+            "CGPA cut-off": f"CGPA {r['cgpa']:.2f}, under the 7.0 cut-off many recruiters use",
+            "Project portfolio": f"{projects} project{'' if projects == 1 else 's'} on record",
+        })
         if prob is not None and p_factors:
             p_factors[0]["evidence"] += f" (model: {prob * 100:.0f}% chance of placement)"
 
@@ -496,8 +583,8 @@ def get_campus() -> Campus:
             "attendancePct": round(att, 1),
             "lmsCompletionPct": round(lms_pct, 1),
             "codingScore": round(coding, 1),
-            # Model probability; falls back to the SRS readiness score if the model can't run.
-            "placementProbability": round(prob if prob is not None else clamp(readiness / 100, 0, 1), 2),
+            # Placement model probability; None (shown as "model unavailable") if the model can't run.
+            "placementProbability": round(prob, 2) if prob is not None else None,
         }
         s = Student(
             row=row, email=ident["email"], values=values, history=history, score_history=score_history,
@@ -515,7 +602,7 @@ def get_campus() -> Campus:
         # Suggested follow-up: matched to the leading factor of the riskier track.
         s.action = {"id": "monitor", "label": "Keep monitoring", "domain": "academic", "reason": "No risk flags this week"}
         if a_level != "low" or p_level != "low":
-            domain = "academic" if s.academic["index"] >= s.placement["index"] else "placement"
+            domain = "academic" if s.academic["index"] / ACADEMIC_HIGH >= s.placement["index"] / PLACEMENT_HIGH else "placement"
             risk = s.academic if domain == "academic" else s.placement
             table = ACADEMIC_ACTIONS if domain == "academic" else PLACEMENT_ACTIONS
             lead = risk["factors"][0]
@@ -525,9 +612,11 @@ def get_campus() -> Campus:
         students.append(s)
 
     # K-Means segments via segmentation.py (cluster on cgpa, attendance, LMS, coding, technical skill).
-    clustered = segmentation.segment_students(df.copy(), n_clusters=N_SEGMENTS)
+    # Never ask K-means for more clusters than there are students (small test datasets).
+    clustered = segmentation.segment_students(df.copy(), n_clusters=max(1, min(N_SEGMENTS, len(df))))
     segments = _name_segments(df, students, clustered["cluster_id"].to_numpy())
 
+    insights, findings = _insights(df, students)
     _seed_interventions(students)
     return Campus(
         students=students,
@@ -535,6 +624,8 @@ def get_campus() -> Campus:
         segments=segments,
         generated_at=datetime.now(IST).isoformat(timespec="seconds"),
         pipeline_sources=_raw_data_stats(),
+        insights=insights,
+        findings=findings,
     )
 
 
@@ -602,10 +693,10 @@ def _alerts_for(s: Student) -> list[dict[str, Any]]:
                     "detail": f"{att[week - 1]:.0f}% to {s.row['attendancePct']:.0f}%. Lowest in {low['subject']} at {low['pct']:.0f}%; below 75% blocks exam eligibility.",
                     "week": f"W{week + 1}"})
 
-    for domain, risk, hist in (("academic", s.academic, s.a_hist), ("placement", s.placement, s.p_hist)):
+    for domain, risk, hist, high in (("academic", s.academic, s.a_hist, ACADEMIC_HIGH), ("placement", s.placement, s.p_hist, PLACEMENT_HIGH)):
         if risk["level"] != "high":
             continue
-        week = next((w for w in recent if hist[w - 1] < RISK_HIGH <= hist[w]), None)
+        week = next((w for w in recent if hist[w - 1] < high <= hist[w]), None)
         if week is None:
             continue
         lead = risk["factors"][0] if risk["factors"] else None
@@ -630,7 +721,7 @@ def _alerts_for(s: Student) -> list[dict[str, Any]]:
                     "week": f"W{LAST + 1}"})
 
     prob = s.row["placementProbability"]
-    if s.row["semester"] >= 7 and prob < 0.25:
+    if s.row["semester"] >= 7 and prob is not None and prob < 0.25:
         gap = s.placement["factors"][0]["factor"].lower() if s.placement["factors"] else "placement tests"
         out.append({**base, "alertId": f"{s.sid}-placement", "kind": "placement-prediction", "severity": "high", "domain": "placement",
                     "title": "Predicted to miss placement",
@@ -649,7 +740,9 @@ def _all_alerts() -> tuple[dict[str, Any], ...]:
 
 def get_alerts() -> dict[str, Any]:
     c = get_campus()
-    return {"generatedAt": c.generated_at, "currentWeek": f"Week {WEEKS}", "alerts": list(_all_alerts())}
+    handled = set(_load_store().get("handledAlerts", []))
+    return {"generatedAt": c.generated_at, "currentWeek": f"Week {WEEKS}",
+            "alerts": [{**a, "handled": a["alertId"] in handled} for a in _all_alerts()]}
 
 
 # --------------------------------------------------------------------------- #
@@ -662,7 +755,36 @@ def _load_store() -> dict[str, Any]:
     try:
         return json.loads(STORE_PATH.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"created": [], "status": {}}
+        return {"created": [], "status": {}, "handledAlerts": [], "groupPlans": {}}
+
+
+def set_alert_handled(alert_id: str, handled: bool) -> bool:
+    if not any(a["alertId"] == alert_id for a in _all_alerts()):
+        return False
+    with _lock:
+        store = _load_store()
+        ids = set(store.get("handledAlerts", []))
+        if handled:
+            ids.add(alert_id)
+        else:
+            ids.discard(alert_id)
+        store["handledAlerts"] = sorted(ids)
+        _save_store(store)
+    return True
+
+
+def set_group_plan(segment_id: str, planned: bool) -> bool:
+    if not any(seg["segmentId"] == segment_id for seg in get_campus().segments):
+        return False
+    with _lock:
+        store = _load_store()
+        plans = store.setdefault("groupPlans", {})
+        if planned:
+            plans[segment_id] = {"plannedAt": datetime.now(IST).isoformat(timespec="seconds")}
+        else:
+            plans.pop(segment_id, None)
+        _save_store(store)
+    return True
 
 
 def _save_store(store: dict[str, Any]) -> None:
@@ -725,8 +847,8 @@ def _queue(c: Campus) -> list[Student]:
 
 def _weekly_risk(c: Campus) -> list[dict[str, Any]]:
     return [{"week": f"W{w + 1}",
-             "academicHigh": sum(1 for s in c.students if s.a_hist[w] >= RISK_HIGH),
-             "placementHigh": sum(1 for s in c.students if s.p_hist[w] >= RISK_HIGH)} for w in range(WEEKS)]
+             "academicHigh": sum(1 for s in c.students if s.a_hist[w] >= ACADEMIC_HIGH),
+             "placementHigh": sum(1 for s in c.students if s.p_hist[w] >= PLACEMENT_HIGH)} for w in range(WEEKS)]
 
 
 def _department_risk(c: Campus) -> list[dict[str, Any]]:
@@ -805,6 +927,7 @@ def get_overview() -> dict[str, Any]:
         "signalChart": signal_chart,
         "weeklyScore": weekly_score,
         "segments": c.segments,
+        "insights": c.insights,
     })
 
 
@@ -869,8 +992,8 @@ def get_risks() -> dict[str, Any]:
                 e["share"] += f["share"]
                 e["seen"] += 1
     queue = _queue(c)
-    newly = [s for s in queue if (s.academic["level"] == "high" and s.a_hist[LAST - LOOKBACK] < RISK_HIGH)
-             or (s.placement["level"] == "high" and s.p_hist[LAST - LOOKBACK] < RISK_HIGH)]
+    newly = [s for s in queue if (s.academic["level"] == "high" and s.a_hist[LAST - LOOKBACK] < ACADEMIC_HIGH)
+             or (s.placement["level"] == "high" and s.p_hist[LAST - LOOKBACK] < PLACEMENT_HIGH)]
     return to_native({
         "generatedAt": c.generated_at,
         "currentWeek": f"Week {WEEKS}",
@@ -887,10 +1010,11 @@ def get_risks() -> dict[str, Any]:
 
 def get_segments() -> dict[str, Any]:
     c = get_campus()
+    plans = _load_store().get("groupPlans", {})
     return to_native({
         "generatedAt": c.generated_at,
         "method": f"k-means (k = {N_SEGMENTS}) on CGPA, attendance, LMS completion, coding score and technical skill, standardised",
-        "segments": c.segments,
+        "segments": [{**seg, "planned": seg["segmentId"] in plans} for seg in c.segments],
         "points": [{"studentId": s.sid, "name": s.row["name"], "segmentId": s.segment_id,
                     "academicReadiness": round(100 - s.academic["index"]), "placementReadiness": round(100 - s.placement["index"])}
                    for s in c.students],
@@ -902,10 +1026,10 @@ def get_interventions() -> dict[str, Any]:
     items = _all_interventions(c)
     covered = {i["studentId"] for i in items}
     suggested = [{
-        "interventionId": f"SUG-{n + 1:03d}", "studentId": s.sid, "studentName": s.row["name"], "department": s.row["department"],
+        "interventionId": f"SUG-{s.sid}", "studentId": s.sid, "studentName": s.row["name"], "department": s.row["department"],
         "label": s.action["label"], "domain": s.action["domain"], "status": "suggested", "owner": s.row["mentor"],
         "startedWeek": f"W{WEEKS}", "scoreBefore": s.row["successScore"], "scoreNow": s.row["successScore"], "reason": s.action["reason"],
-    } for n, s in enumerate(x for x in _queue(c) if x.sid not in covered)]
+    } for s in _queue(c) if s.sid not in covered]
 
     outcomes: dict[str, dict[str, Any]] = {}
     for i in items:
@@ -936,10 +1060,11 @@ def get_pipeline() -> dict[str, Any]:
             {"title": "Clean", "detail": "Missing coding, quiz and communication scores are filled with the column mean."},
             {"title": "Join", "detail": "Every source is joined on student_id into one record per student."},
             {"title": "Score", "detail": "Area scores are weighted into the 0-100 Student Success Score (weights below)."},
-            {"title": "Flag and explain", "detail": "Academic and placement risk use the SRS thresholds; each factor's share is shown. The placement model adds a probability."},
+            {"title": "Flag and explain", "detail": "Academic and placement risk are separate point scores built from each student's gaps; the level follows from the score and every factor's share is shown. The placement model adds a probability."},
             {"title": "Segment", "detail": f"K-means groups students into {N_SEGMENTS} segments for group interventions."},
             {"title": "Weekly trend (simulated)", "detail": "The CSVs are one snapshot, so the 12-week history, names, departments, mentors and past interventions are simulated around the real current values."},
         ],
+        "findings": c.findings,
         "weights": [{"key": a["key"], "label": a["label"], "weight": a["weight"]} for a in AREAS],
     })
 

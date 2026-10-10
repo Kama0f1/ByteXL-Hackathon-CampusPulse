@@ -122,7 +122,7 @@ export function RiskMatrixExplorer({ matrix, rows }: RiskMatrixExplorerProps) {
             </ul>
             {students.length > 40 ? (
               <Link
-                href={`/students?risk=${selected.a === "high" && selected.p === "high" ? "both-high" : selected.a === "high" ? "academic-high" : selected.p === "high" ? "placement-high" : "all"}`}
+                href={`/students?academic=${selected.a}&placement=${selected.p}`}
                 className="mt-3 text-[13px] font-medium text-ink-2 hover:text-ink"
               >
                 See all {students.length} in the student list

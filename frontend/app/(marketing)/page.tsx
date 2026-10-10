@@ -31,7 +31,8 @@ export default async function LandingPage() {
     getInterventionReport(),
     getPipelineReport(),
   ]);
-  const example = (await getStudentProfile(risks.flagged[0].studentId))!.data;
+  // Show the most urgent flagged student, or anyone if nobody is flagged.
+  const example = (await getStudentProfile((risks.flagged[0] ?? rows[0]).studentId))!.data;
 
   const readiness = new Map(segments.points.map((p) => [p.studentId, p]));
   const field: FieldStudent[] = rows.map((r) => ({
@@ -178,8 +179,8 @@ export default async function LandingPage() {
             <Reveal className="max-w-2xl">
               <h2 className="text-4xl font-semibold leading-[1.05] tracking-[-0.04em] text-white sm:text-5xl">Reasons, not just red flags.</h2>
               <p className="mt-5 text-base leading-relaxed text-white/60">
-                Every risk shows how much each factor contributes, in plain language a mentor can act on. This is {example.name.split(" ")[0]}, a simulated
-                student from the demo.
+                Every risk shows how much each factor contributes, in plain language a mentor can act on. This is {example.name.split(" ")[0]}, one of the
+                students in the dataset (name simulated).
               </p>
             </Reveal>
             <div className="mt-12 grid gap-4 lg:grid-cols-2">
@@ -317,7 +318,7 @@ export default async function LandingPage() {
       <footer className="border-t border-white/5">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-white/45 sm:flex-row sm:px-6">
           <Logo tone="light" />
-          <p>Built for HacXLerate 2026. Demo with simulated data.</p>
+          <p>Built for HacXLerate 2026. Scores from the campus datasets; names and history simulated.</p>
         </div>
       </footer>
     </div>

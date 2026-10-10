@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Segmented } from "@/components/ui/Segmented";
-import { moveIntervention } from "@/lib/api";
+import { moveIntervention } from "@/lib/api-client";
 import { formatSignedInt } from "@/lib/format";
 import { DOMAIN_LABEL, STATUS_LABEL } from "@/lib/labels";
 import type { Intervention, InterventionStatus, RiskDomain } from "@/lib/types";

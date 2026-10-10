@@ -42,17 +42,24 @@ function gridLayout(students: FieldStudent[]): Layout {
     { level: "medium", title: "Medium" },
     { level: "low", title: "On track" },
   ];
-  const cols = 34;
-  const gap = 13.6;
+  const members = groups.map((g) => students.filter((s) => severity(s) === g.level).sort((a, b) => a.score - b.score));
+  // Widen the grid until all three groups fit inside the drawing area (640 demo or 1,000 live students).
+  let cols = 34;
+  let gap = 13.6;
+  const fits = () => 26 + members.reduce((h, m) => h + Math.ceil(m.length / cols) * gap + 30, 0) - 30 <= H - 8;
+  while (!fits() && cols < 80) {
+    cols += 1;
+    gap = Math.min(13.6, (W - 24) / (cols - 1));
+  }
   const pos = new Map<string, [number, number]>();
   const labels: Layout["labels"] = [];
   const left = (W - (cols - 1) * gap) / 2;
   let y = 26;
-  for (const g of groups) {
-    const members = students.filter((s) => severity(s) === g.level).sort((a, b) => a.score - b.score);
-    labels.push({ x: left - 4, y: y - 10, text: `${g.title}  ${members.length}`, anchor: "start" });
-    members.forEach((s, i) => pos.set(s.id, [left + (i % cols) * gap, y + Math.floor(i / cols) * gap + 2]));
-    y += Math.ceil(members.length / cols) * gap + 30;
+  for (const [k, g] of groups.entries()) {
+    const list = members[k];
+    labels.push({ x: left - 4, y: y - 10, text: `${g.title}  ${list.length}`, anchor: "start" });
+    list.forEach((s, i) => pos.set(s.id, [left + (i % cols) * gap, y + Math.floor(i / cols) * gap + 2]));
+    y += Math.ceil(list.length / cols) * gap + 30;
   }
   return { pos, labels };
 }
@@ -89,7 +96,7 @@ function mapLayout(students: FieldStudent[]): Layout {
   };
 }
 
-/** The whole simulated campus as dots. Switch views to watch the same 640 students regroup. */
+/** The whole campus as dots. Switch views to watch the same students regroup. */
 export function CampusField({ students, segments }: { students: FieldStudent[]; segments: { id: string; name: string }[] }) {
   const [mode, setMode] = useState<Mode>("risk");
   const [hover, setHover] = useState<FieldStudent | null>(null);
@@ -130,7 +137,7 @@ export function CampusField({ students, segments }: { students: FieldStudent[]; 
       </div>
 
       <div className="relative">
-        <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label={`${students.length} simulated students arranged ${mode === "risk" ? "by risk level" : mode === "segments" ? "by segment" : "by academic and placement readiness"}.`}>
+        <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label={`${students.length} students arranged ${mode === "risk" ? "by risk level" : mode === "segments" ? "by segment" : "by academic and placement readiness"}.`}>
           {layout.labels.map((l) => (
             <text key={`${mode}-${l.text}`} x={l.x} y={l.y} textAnchor={l.anchor ?? "start"} className="fill-white/55 text-[11px] font-medium">
               {l.text}

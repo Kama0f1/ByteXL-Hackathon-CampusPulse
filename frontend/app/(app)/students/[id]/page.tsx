@@ -13,7 +13,7 @@ import { ScoreWaterfall } from "@/components/students/ScoreWaterfall";
 import { SignalGrid } from "@/components/students/SignalGrid";
 import { SubjectAttendance } from "@/components/students/SubjectAttendance";
 import { Avatar } from "@/components/ui/Avatar";
-import { DemoFootnote } from "@/components/ui/DemoBadge";
+import { DemoFootnote, SimulatedTag } from "@/components/ui/DemoBadge";
 import { Panel } from "@/components/ui/Panel";
 import { ScoreRing } from "@/components/ui/ScoreRing";
 import { formatSignedInt } from "@/lib/format";
@@ -111,7 +111,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         <Panel index={4}>
           <PlacementPrediction probability={s.placementProbability} semester={s.semester} mainGap={s.placement.factors[0]?.factor} />
         </Panel>
-        <Panel index={4} title="Attendance by subject">
+        <Panel index={4} title="Attendance by subject" action={<SimulatedTag label="Simulated split" />}>
           <SubjectAttendance subjects={s.subjectAttendance} overall={s.attendancePct} />
         </Panel>
         <Panel index={4} title={`Alerts (${s.alerts.length})`} description="Recent changes that triggered an alert.">
@@ -150,17 +150,17 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
               live={result.origin === "api"}
             />
           </div>
-          <Panel index={6} title="What changed in four weeks">
+          <Panel index={6} title="What changed in four weeks" action={<SimulatedTag />}>
             <ChangeBreakdown factors={s.scoreChangeFactors} change={s.scoreChange} />
           </Panel>
         </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-12">
-        <Panel index={7} className="xl:col-span-8" title="Weekly early-warning chart" description="All seven data areas, week by week.">
+        <Panel index={7} className="xl:col-span-8" title="Weekly early-warning chart" description="All seven data areas, week by week." action={<SimulatedTag />}>
           <SignalGrid signals={s.signals} weeks={weeks} />
         </Panel>
-        <Panel index={8} className="xl:col-span-4" title="Success score this term">
+        <Panel index={8} className="xl:col-span-4" title="Success score this term" action={<SimulatedTag />}>
           <LineChart
             ariaLabel="Success score by week"
             labels={weeks}

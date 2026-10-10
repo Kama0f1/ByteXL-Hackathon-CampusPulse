@@ -39,7 +39,7 @@ export default async function AlertsPage() {
         }
         description="Newest first. Open the student to see why, then mark the alert handled."
       >
-        <AlertFeed alerts={data.alerts} currentWeek={data.currentWeek} />
+        <AlertFeed alerts={data.alerts} currentWeek={data.currentWeek} live={origin === "api"} />
       </Panel>
       <DemoFootnote endpoint="GET /api/alerts" origin={origin} />
     </div>

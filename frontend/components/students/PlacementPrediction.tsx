@@ -1,7 +1,20 @@
 import { TargetIcon } from "@phosphor-icons/react/dist/ssr";
 
 /** The placement model's prediction for one student, shown as a probability with a plain verdict. */
-export function PlacementPrediction({ probability, semester, mainGap }: { probability: number; semester: number; mainGap?: string }) {
+export function PlacementPrediction({ probability, semester, mainGap }: { probability: number | null; semester: number; mainGap?: string }) {
+  if (probability === null) {
+    return (
+      <div>
+        <p className="flex items-center gap-2 text-xs font-medium text-ink-3">
+          <TargetIcon aria-hidden="true" className="h-4 w-4" /> Placement model prediction
+        </p>
+        <p className="mt-3 text-lg font-semibold text-ink">Model unavailable</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-ink-3">
+          The placement model could not run, so no probability is shown. Placement risk above still uses the readiness rules.
+        </p>
+      </div>
+    );
+  }
   const pct = Math.round(probability * 100);
   const verdict = pct >= 70 ? "Likely to be placed" : pct >= 40 ? "Could go either way" : "At risk of missing placement";
   const tone = pct >= 70 ? "bg-risk-low" : pct >= 40 ? "bg-risk-medium" : "bg-risk-high";

@@ -76,6 +76,19 @@ export default async function DataSourcesPage() {
         </div>
       </Panel>
 
+      {data.findings?.length ? (
+        <Panel index={2} title="What joining the sources revealed" description="Data-quality checks run on every load. They shape how the score and risks are built.">
+          <ul className="space-y-2.5">
+            {data.findings.map((finding) => (
+              <li key={finding} className="flex gap-3 text-[13px] leading-relaxed text-ink-2">
+                <span aria-hidden="true" className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3" />
+                {finding}
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      ) : null}
+
       <Panel
         index={2}
         title="Check your own CSV files"

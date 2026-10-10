@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { InterventionBoard } from "@/components/interventions/InterventionBoard";
-import { DemoFootnote } from "@/components/ui/DemoBadge";
+import { DemoFootnote, SimulatedTag } from "@/components/ui/DemoBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { formatPercent } from "@/lib/format";
@@ -35,6 +35,7 @@ export default async function InterventionsPage() {
       <Panel
         index={2}
         title="Did it work?"
+        action={<SimulatedTag label="Seeded history" />}
         description={
           completed
             ? `${improved} of ${completed} completed follow-ups (${formatPercent(improved / completed)}) were followed by a higher Success Score.`
@@ -90,7 +91,7 @@ export default async function InterventionsPage() {
             </table>
           </div>
         ) : null}
-        <p className="mt-3 text-xs text-ink-3">Early signal, not proof: score change is measured from the week each follow-up started.</p>
+        <p className="mt-3 text-xs text-ink-3">Early signal, not proof: score change is measured from the week each follow-up started. Follow-ups started before this week are a seeded starter set on the simulated history.</p>
       </Panel>
 
       <DemoFootnote endpoint="GET /api/interventions" origin={origin} />

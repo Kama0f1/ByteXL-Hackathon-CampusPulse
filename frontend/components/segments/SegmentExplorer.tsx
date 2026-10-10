@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useWidth } from "@/components/charts/useWidth";
 import { buttonClass } from "@/components/ui/Button";
+import { planGroupSession } from "@/lib/api-client";
 import { DOMAIN_LABEL } from "@/lib/labels";
 import type { SegmentReport } from "@/lib/types";
 
@@ -19,14 +20,29 @@ const TONE = {
 type SegmentExplorerProps = {
   report: SegmentReport;
   initialFocus?: string;
+  /** Save group plans to the backend (false on demo data). */
+  live?: boolean;
 };
 
 /** Pick a segment: its students light up on the readiness map, with its profile and a group plan. */
-export function SegmentExplorer({ report, initialFocus }: SegmentExplorerProps) {
+export function SegmentExplorer({ report, initialFocus, live = false }: SegmentExplorerProps) {
   const router = useRouter();
   const [focus, setFocus] = useState(initialFocus ?? report.segments[0].segmentId);
   const [hover, setHover] = useState<(typeof report.points)[number] | null>(null);
-  const [planned, setPlanned] = useState<string[]>([]);
+  const [planned, setPlanned] = useState<string[]>(() => report.segments.filter((s) => s.planned).map((s) => s.segmentId));
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function plan(segmentId: string, on: boolean) {
+    setPlanned((p) => (on ? [...p, segmentId] : p.filter((x) => x !== segmentId)));
+    if (!live) return;
+    try {
+      await planGroupSession(segmentId, on);
+      setSaveError(null);
+    } catch {
+      setPlanned((p) => (on ? p.filter((x) => x !== segmentId) : [...p, segmentId]));
+      setSaveError("Could not save. Is the backend running?");
+    }
+  }
   const [ref, width] = useWidth<HTMLDivElement>(560);
 
   const segment = report.segments.find((s) => s.segmentId === focus) ?? report.segments[0];
@@ -183,15 +199,22 @@ export function SegmentExplorer({ report, initialFocus }: SegmentExplorerProps) 
             <p className="mt-1 text-[13px] text-ink-2">{segment.groupIntervention.detail}</p>
             <div className="mt-3 flex items-center gap-3">
               {planned.includes(segment.segmentId) ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-risk-low-soft px-3 py-1.5 text-[13px] font-medium text-risk-low-ink">
-                  <CheckIcon aria-hidden="true" weight="bold" className="h-3.5 w-3.5" /> Planned for {segment.students} students
-                </span>
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-risk-low-soft px-3 py-1.5 text-[13px] font-medium text-risk-low-ink">
+                    <CheckIcon aria-hidden="true" weight="bold" className="h-3.5 w-3.5" /> Planned for {segment.students} students
+                  </span>
+                  <button type="button" onClick={() => plan(segment.segmentId, false)} className="text-[12px] text-ink-3 underline-offset-4 hover:text-ink hover:underline">
+                    Undo
+                  </button>
+                </>
               ) : (
-                <button type="button" onClick={() => setPlanned((p) => [...p, segment.segmentId])} className={buttonClass("primary", "sm")}>
+                <button type="button" onClick={() => plan(segment.segmentId, true)} className={buttonClass("primary", "sm")}>
                   Plan for all {segment.students}
                 </button>
               )}
-              <span className="text-[11px] text-ink-3">Demo: not saved.</span>
+              <span role="status" className={`text-[11px] ${saveError ? "text-risk-high-ink" : "text-ink-3"}`}>
+                {saveError ?? (live ? "Saved for the whole group." : "Demo: not saved.")}
+              </span>
             </div>
           </div>
         </motion.div>

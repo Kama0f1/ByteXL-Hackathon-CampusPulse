@@ -23,6 +23,22 @@ export function DemoBadge({ origin = "demo", className = "" }: { origin?: DataOr
   );
 }
 
+/**
+ * Small tag on charts built on simulated values. The datasets are one snapshot with no dates, so
+ * anything week-by-week (or split by subject) is simulated around each student's real values.
+ */
+export function SimulatedTag({ label = "Simulated history" }: { label?: string }) {
+  return (
+    <span
+      title="The campus datasets are a single snapshot with no dates, so this is simulated around each student's real current values."
+      className="inline-flex items-center gap-1 rounded-full border border-dashed border-line-strong px-2 py-0.5 text-[11px] font-medium text-ink-3"
+    >
+      <InfoIcon aria-hidden="true" weight="bold" className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
+
 /** One-line footnote naming the data source behind the page. */
 export function DemoFootnote({ endpoint, origin = "demo" }: { endpoint: string; origin?: DataOrigin }) {
   const code = <code className="rounded bg-surface-3 px-1 py-0.5 font-mono text-[11px] text-ink-2">{endpoint}</code>;

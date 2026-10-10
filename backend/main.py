@@ -85,6 +85,12 @@ class InterventionCreate(BaseModel):
 class InterventionStatusUpdate(BaseModel):
     status: Literal["suggested", "assigned", "in-progress", "completed"]
 
+class HandledUpdate(BaseModel):
+    handled: bool = True
+
+class PlanUpdate(BaseModel):
+    planned: bool = True
+
 class PredictRequest(BaseModel):
     """Features of the saved placement model. Anything left out is treated as 0 by the model code."""
     cgpa: float = Field(ge=0, le=10)
@@ -105,10 +111,11 @@ def root():
 @app.get("/api/health")
 def health():
     try:
-        students = len(campus_service.get_campus().students)
+        campus = campus_service.get_campus()
     except Exception as exc:
         return JSONResponse(status_code=503, content={"status": "error", "detail": repr(exc)})
-    return {"status": "ok", "students": students}
+    model_ok = any(s.placed_prob is not None for s in campus.students)
+    return {"status": "ok", "students": len(campus.students), "placementModel": "loaded" if model_ok else "unavailable"}
 
 @app.get("/api/overview")
 def overview():
@@ -137,6 +144,18 @@ def segments():
 def alerts():
     return campus_service.get_alerts()
 
+@app.post("/api/alerts/{alert_id}/handled")
+def mark_alert_handled(alert_id: str, body: HandledUpdate):
+    if not campus_service.set_alert_handled(alert_id, body.handled):
+        raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+    return {"alertId": alert_id, "handled": body.handled}
+
+@app.post("/api/segments/{segment_id}/plan")
+def plan_group_session(segment_id: str, body: PlanUpdate):
+    if not campus_service.set_group_plan(segment_id, body.planned):
+        raise HTTPException(status_code=404, detail=f"Segment {segment_id} not found")
+    return {"segmentId": segment_id, "planned": body.planned}
+
 @app.get("/api/interventions")
 def interventions():
     return campus_service.get_interventions()
@@ -150,13 +169,19 @@ def create_intervention(body: InterventionCreate):
 
 @app.patch("/api/interventions/{intervention_id}")
 def update_intervention(intervention_id: str, body: InterventionStatusUpdate):
-    # Suggested cards (SUG-xxx) are not stored yet: moving one creates the intervention.
+    # Suggested cards are not stored yet. Their id is "SUG-<studentId>", so the student comes from
+    # the id itself, never from a list position that shifts as other cards are assigned.
     if intervention_id.startswith("SUG-"):
-        card = next((i for i in campus_service.get_interventions()["interventions"] if i["interventionId"] == intervention_id), None)
-        if card is None:
-            raise HTTPException(status_code=404, detail=f"Intervention {intervention_id} not found")
-        item = campus_service.create_intervention(card["studentId"], card["label"], card["domain"], card["owner"], body.status)
-        return {"interventionId": item["interventionId"], "status": item["status"]}
+        student_id = intervention_id[len("SUG-"):]
+        existing = [i for i in campus_service.get_interventions()["interventions"]
+                    if i["studentId"] == student_id and not i["interventionId"].startswith("SUG-")]
+        if existing:  # already assigned (e.g. from another tab): move that one instead of duplicating
+            intervention_id = existing[-1]["interventionId"]
+        else:
+            item = campus_service.create_intervention(student_id, None, None, None, body.status)
+            if item is None:
+                raise HTTPException(status_code=404, detail=f"Student {student_id} not found")
+            return {"interventionId": item["interventionId"], "status": item["status"]}
     if not campus_service.update_intervention_status(intervention_id, body.status):
         raise HTTPException(status_code=404, detail=f"Intervention {intervention_id} not found")
     return {"interventionId": intervention_id, "status": body.status}

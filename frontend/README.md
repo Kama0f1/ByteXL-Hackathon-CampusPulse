@@ -1,6 +1,6 @@
 # CampusPulse frontend
 
-Next.js 16 (App Router), React 19, TypeScript and Tailwind CSS 4, with `motion` for animation and Phosphor icons. Every page is built and runs on a **simulated campus of 640 invented students** until the analytics backend is connected.
+Next.js 16 (App Router), React 19, TypeScript and Tailwind CSS 4, with `motion` for animation and Phosphor icons. Every page reads the FastAPI backend in `../backend`, which scores the 1,000 students in the seven CSVs in `../data`. If the backend is not running, the whole app falls back to a **simulated campus of 640 invented students** and the top bar says "Demo data".
 
 ## Run locally
 
@@ -67,11 +67,11 @@ proxy.ts                sends signed-out visitors to /login
 - **Academic is always blue, placement always orange**, and they are never merged into one risk number.
 - Risk level is never shown by colour alone: high = triangle, medium = square, low = circle, always with a text label (`RiskBadge`).
 - Charts are plain SVG with hover tooltips and keyboard reading; no chart library.
-- Pages that show simulated values end with a one-line note naming the proposed endpoint, and the top bar shows a "Demo data" badge.
+- Every page ends with a one-line note naming its endpoint and what is simulated, and the top bar shows "Live data" or "Demo data".
 
 ## Connecting the backend
 
-Only `GET /api/health` exists in the backend today. The frontend expects these **proposed** endpoints, each returning the type in `lib/types.ts`:
+Start the backend first (`python ../backend/main.py`, port 8000). Each data function calls one endpoint and returns the type in `lib/types.ts`:
 
 | Endpoint | Type | Data function |
 |---|---|---|
@@ -84,11 +84,11 @@ Only `GET /api/health` exists in the backend today. The frontend expects these *
 | `GET /api/pipeline` | `PipelineReport` | `lib/pipeline.ts` |
 | `GET /api/alerts` | `AlertReport` | `lib/alerts.ts` |
 
-To connect one, fetch it in its data function and return `{ origin: "api", data }`. The frontend displays scores, risk levels and explanations; it does not compute them. The backend URL defaults to `http://localhost:8000`; copy `.env.example` to `.env.local` to change it. Never put private keys in `NEXT_PUBLIC_` variables.
+`lib/api.ts` checks `GET /api/health` once per page render: if the backend is down, every payload on the page comes from the demo campus; if it is up but one endpoint fails, `app/(app)/error.tsx` is shown rather than mixing live and demo students. Browser-side saves (`POST`/`PATCH /api/interventions`) live in `lib/api-client.ts`. The backend URL defaults to `http://localhost:8000`; copy `.env.example` to `.env.local` to change it. Never put private keys in `NEXT_PUBLIC_` variables.
 
 ## Demo sign-in
 
-There are no real accounts. Pressing **Sign in to the demo** sets an httpOnly cookie for 8 hours. Replace this with real authentication before using real student data. Interactive actions in the demo (assigning a follow-up, moving board cards, planning a segment session) are not saved.
+There are no real accounts. Pressing **Sign in to the demo** sets an httpOnly cookie for 8 hours. Replace this with real authentication before using real student data. Assigning a follow-up, moving board cards, marking alerts handled and planning a segment session are saved by the backend (to `backend/interventions_store.json`).
 
 ## Tooling
 

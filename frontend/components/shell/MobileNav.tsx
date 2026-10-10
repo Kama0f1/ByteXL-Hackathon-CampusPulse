@@ -2,18 +2,62 @@
 
 import { ListIcon, XIcon } from "@phosphor-icons/react/dist/ssr";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { AppNav } from "@/components/shell/AppNav";
 import type { NavCounts } from "@/components/shell/nav";
 import { Logo } from "@/components/ui/Logo";
 
-/** Slide-in navigation drawer for small screens. */
+const subscribeNothing = () => () => {};
+
+/**
+ * Slide-in navigation drawer for small screens. Rendered into <body>: inside the header, whose
+ * backdrop-filter makes it the containing block, a fixed drawer would only be as tall as the header.
+ */
 export function MobileNav({ counts, footer }: { counts: NavCounts; footer: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  // false during server render and hydration, true afterwards: the portal needs document.body.
+  const isClient = useSyncExternalStore(subscribeNothing, () => true, () => false);
+
+  // Modal behaviour: Escape closes, Tab stays inside the drawer, the page behind does not scroll,
+  // and focus returns to the menu button afterwards.
+  useEffect(() => {
+    if (!open) return;
+    const opener = trigger.current;
+    const focusables = () => [...(panel.current?.querySelectorAll<HTMLElement>("a[href], button, select, input") ?? [])];
+    focusables()[0]?.focus();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") return setOpen(false);
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+      opener?.focus();
+    };
+  }, [open]);
 
   return (
     <>
       <button
+        ref={trigger}
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Open navigation"
@@ -23,6 +67,7 @@ export function MobileNav({ counts, footer }: { counts: NavCounts; footer: React
         <ListIcon aria-hidden="true" className="h-5 w-5" />
       </button>
 
+      {isClient ? createPortal(
       <AnimatePresence>
         {open ? (
           <div className="fixed inset-0 z-50 lg:hidden">
@@ -34,6 +79,7 @@ export function MobileNav({ counts, footer }: { counts: NavCounts; footer: React
               onClick={() => setOpen(false)}
             />
             <motion.div
+              ref={panel}
               role="dialog"
               aria-modal="true"
               aria-label="Navigation"
@@ -61,7 +107,9 @@ export function MobileNav({ counts, footer }: { counts: NavCounts; footer: React
             </motion.div>
           </div>
         ) : null}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body,
+      ) : null}
     </>
   );
 }

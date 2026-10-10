@@ -134,6 +134,18 @@ export type CampusOverview = {
   /** Average success score per week, oldest first. */
   weeklyScore: number[];
   segments: SegmentSummary[];
+  /** Findings that only appear once the seven sources are joined. */
+  insights?: CampusInsight[];
+};
+
+/** One finding drawn from the combined data, for the dashboard. */
+export type CampusInsight = {
+  id: string;
+  domain: RiskDomain | null;
+  /** Headline number, e.g. "70+" or "r = 0.79". */
+  metric: string;
+  title: string;
+  detail: string;
 };
 
 /* ------------------------------------------------------------------ */
@@ -157,8 +169,8 @@ export type StudentRow = {
   attendancePct: number;
   lmsCompletionPct: number;
   codingScore: number;
-  /** Predicted probability of being placed, 0–1, from the backend placement model. */
-  placementProbability: number;
+  /** Predicted probability of being placed, 0–1, from the backend placement model; null if the model is unavailable. */
+  placementProbability: number | null;
 };
 
 /** One data area's standing for a student, with weekly history. */
@@ -253,6 +265,8 @@ export type CampusAlert = {
   detail: string;
   /** Teaching week the alert fired, e.g. "W12". */
   week: string;
+  /** Marked handled by faculty (saved by the backend). */
+  handled?: boolean;
 };
 
 export type AlertReport = {
@@ -311,6 +325,8 @@ export type SegmentSummary = {
   placementHigh: number;
   groupIntervention: { label: string; domain: RiskDomain; detail: string };
   tone: "strong" | "mixed" | "watch" | "support";
+  /** A group session has been planned for this segment (saved by the backend). */
+  planned?: boolean;
 };
 
 export type SegmentReport = {
@@ -372,4 +388,6 @@ export type PipelineReport = {
   sources: DataSourceStatus[];
   steps: { title: string; detail: string }[];
   weights: { key: DataAreaKey; label: string; weight: number }[];
+  /** Data-quality findings from joining the sources. */
+  findings?: string[];
 };

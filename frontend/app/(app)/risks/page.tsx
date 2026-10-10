@@ -6,7 +6,7 @@ import { DepartmentRiskChart } from "@/components/charts/DepartmentRiskChart";
 import { DriverBars } from "@/components/risks/DriverBars";
 import { RiskMatrixExplorer } from "@/components/risks/RiskMatrixExplorer";
 import { Avatar } from "@/components/ui/Avatar";
-import { DemoFootnote } from "@/components/ui/DemoBadge";
+import { DemoFootnote, SimulatedTag } from "@/components/ui/DemoBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
@@ -22,7 +22,9 @@ export const metadata: Metadata = {
 export default async function RisksPage() {
   const [{ data: report, origin }, { data: rows }] = await Promise.all([getRiskReport(), getStudents()]);
   const weeks = report.weeklyRisk.map((w) => w.week);
-  const predicted = rows.filter((r) => r.semester >= 7 && r.placementProbability < 0.4).sort((a, b) => a.placementProbability - b.placementProbability);
+  const predicted = rows
+    .flatMap((r) => (r.placementProbability !== null && r.semester >= 7 && r.placementProbability < 0.4 ? [{ ...r, chance: r.placementProbability }] : []))
+    .sort((a, b) => a.chance - b.chance);
 
   return (
     <div className="space-y-6">
@@ -55,7 +57,7 @@ export default async function RisksPage() {
         <Panel index={2} title="What is driving risk across campus?" description="The main reason behind each student at medium or high risk.">
           <DriverBars drivers={report.drivers} />
         </Panel>
-        <Panel index={3} title="Is risk going up or down?" description="Students flagged high risk at the end of each week.">
+        <Panel index={3} title="Is risk going up or down?" description="Students flagged high risk at the end of each week." action={<SimulatedTag />}>
           <LineChart
             ariaLabel="High-risk students by week"
             labels={weeks}
@@ -73,7 +75,7 @@ export default async function RisksPage() {
           index={4}
           className="xl:col-span-7"
           title={`Newly flagged this month (${report.newlyFlagged.length})`}
-          description="Students who were not high risk four weeks ago. Catching them now is the point of early warning."
+          description="Students who were not high risk four weeks ago (on the simulated weekly history). Catching them now is the point of early warning."
           action={
             <Link href="/students?risk=any-high" className="inline-flex items-center gap-1 text-[13px] font-medium text-ink-2 hover:text-ink">
               All flagged <ArrowRightIcon aria-hidden="true" className="h-3.5 w-3.5" />
@@ -128,7 +130,7 @@ export default async function RisksPage() {
                   </span>
                 </span>
                 <span className="text-right">
-                  <span className="tabular block text-sm font-semibold text-risk-high-ink">{Math.round(r.placementProbability * 100)}%</span>
+                  <span className="tabular block text-sm font-semibold text-risk-high-ink">{Math.round(r.chance * 100)}%</span>
                   <span className="block text-[10px] text-ink-3">chance</span>
                 </span>
               </Link>

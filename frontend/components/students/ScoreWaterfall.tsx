@@ -30,8 +30,14 @@ export function ScoreWaterfall({ signals, score }: ScoreWaterfallProps) {
   return (
     <div>
       <p className="mb-4 text-[13px] leading-relaxed text-ink-2">
-        <span className="font-semibold text-ink">{top.label}</span> costs the most:{" "}
-        <span className="tabular font-semibold text-ink">{Math.round((top.lost / totalLost) * 100)}%</span> of the {totalLost} missing points.
+        {totalLost > 0 ? (
+          <>
+            <span className="font-semibold text-ink">{top.label}</span> costs the most:{" "}
+            <span className="tabular font-semibold text-ink">{Math.round((top.lost / totalLost) * 100)}%</span> of the {Math.round(totalLost * 10) / 10} missing points.
+          </>
+        ) : (
+          "A perfect score: no points are missing in any area."
+        )}
       </p>
       <div className="space-y-1.5">
         <Row label="Perfect score" value="100" bar={{ from: 100, to: 0, tone: "bg-surface-3" }} muted />

@@ -30,7 +30,7 @@ export default async function SegmentsPage({ searchParams }: { searchParams: Pro
         }
         description="Pick a segment to see who is in it, how it compares with the campus and what to do."
       >
-        <SegmentExplorer report={report} initialFocus={initialFocus} />
+        <SegmentExplorer report={report} initialFocus={initialFocus} live={origin === "api"} />
       </Panel>
       <DemoFootnote endpoint="GET /api/segments" origin={origin} />
     </div>

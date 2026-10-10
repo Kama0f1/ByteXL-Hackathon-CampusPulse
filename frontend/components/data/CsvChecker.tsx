@@ -16,6 +16,18 @@ const AREAS = [
   { key: "feedback", label: "Feedback", columns: ["satisfaction_score", "support_need_category"] },
 ] as const;
 
+/** Valid range for every numeric column; anything outside (or not a number) is reported. */
+const RANGES: Record<string, [number, number]> = {
+  cgpa: [0, 10], backlogs: [0, 30], semester: [1, 8],
+  attendance_pct: [0, 100], classes_attended: [0, 1000],
+  assignment_completion_pct: [0, 100], lms_logins_30d: [0, 1000], quiz_avg: [0, 100],
+  clubs_participation_count: [0, 50], events_attended_count: [0, 200],
+  aptitude_score: [0, 100], coding_score: [0, 100], mock_interview_score: [0, 100],
+  technical_skill_score: [0, 100], communication_score: [0, 100], projects_count: [0, 100], certifications_count: [0, 100],
+  satisfaction_score: [0, 10],
+};
+const OUTCOMES = new Set(["placed", "not placed"]);
+
 type Checked = {
   file: string;
   area: (typeof AREAS)[number] | null;
@@ -25,8 +37,12 @@ type Checked = {
   emptyCells: number;
   duplicateIds: number;
   ids: Set<string>;
+  /** Problems that make the file unsafe to load: blank IDs, bad values, missing columns, duplicates. */
+  problems: string[];
   error?: string;
 };
+
+const isBlank = (v: string | undefined) => v === undefined || v === "" || v.toLowerCase() === "nan" || v.toLowerCase() === "null";
 
 function splitLine(line: string) {
   const out: string[] = [];
@@ -45,7 +61,7 @@ function splitLine(line: string) {
 
 function check(file: string, text: string): Checked {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  const empty: Checked = { file, area: null, rows: 0, columns: [], missingColumns: [], emptyCells: 0, duplicateIds: 0, ids: new Set() };
+  const empty: Checked = { file, area: null, rows: 0, columns: [], missingColumns: [], emptyCells: 0, duplicateIds: 0, ids: new Set(), problems: [] };
   if (lines.length < 2) return { ...empty, error: "The file has no data rows." };
 
   const columns = splitLine(lines[0]).map((c) => c.toLowerCase());
@@ -58,26 +74,53 @@ function check(file: string, text: string): Checked {
   const ids = new Set<string>();
   let duplicateIds = 0;
   let emptyCells = 0;
-  for (const line of lines.slice(1)) {
+  let blankIds = 0;
+  let badValues = 0;
+  const examples: string[] = [];
+  for (const [n, line] of lines.slice(1).entries()) {
     const cells = splitLine(line);
     const id = cells[idIndex];
-    if (ids.has(id)) duplicateIds += 1;
-    ids.add(id);
-    columns.forEach((_, i) => {
+    if (isBlank(id)) {
+      blankIds += 1;
+    } else {
+      if (ids.has(id)) duplicateIds += 1;
+      ids.add(id);
+    }
+    columns.forEach((col, i) => {
       const v = cells[i];
-      if (v === undefined || v === "" || v.toLowerCase() === "nan" || v.toLowerCase() === "null") emptyCells += 1;
+      if (isBlank(v)) {
+        if (i !== idIndex) emptyCells += 1;
+        return;
+      }
+      const range = RANGES[col];
+      const bad = range
+        ? !(Number.isFinite(Number(v)) && Number(v) >= range[0] && Number(v) <= range[1])
+        : col === "placement_outcome" && !OUTCOMES.has(v.toLowerCase());
+      if (bad) {
+        badValues += 1;
+        if (examples.length < 3) examples.push(`${col} = ${v} (row ${n + 2})`);
+      }
     });
   }
+
+  const missingColumns = area ? area.columns.filter((c) => !columns.includes(c)) : [];
+  const problems = [
+    blankIds ? `${blankIds} row${blankIds === 1 ? "" : "s"} with no student_id` : "",
+    duplicateIds ? `${duplicateIds} duplicate student_id${duplicateIds === 1 ? "" : "s"}` : "",
+    badValues ? `${badValues} invalid value${badValues === 1 ? "" : "s"}, e.g. ${examples.join(", ")}` : "",
+    missingColumns.length ? `missing column${missingColumns.length === 1 ? "" : "s"}: ${missingColumns.join(", ")}` : "",
+  ].filter(Boolean);
 
   return {
     file,
     area,
     rows: lines.length - 1,
     columns,
-    missingColumns: area ? area.columns.filter((c) => !columns.includes(c)) : [],
+    missingColumns,
     emptyCells,
     duplicateIds,
     ids,
+    problems,
     error: area ? undefined : "Columns don't match any of the seven data areas.",
   };
 }
@@ -97,6 +140,7 @@ export function CsvChecker() {
   const union = new Set(valid.flatMap((f) => [...f.ids]));
   const inAll = valid.length ? [...union].filter((id) => valid.every((f) => f.ids.has(id))).length : 0;
   const covered = new Set(valid.map((f) => f.area!.key));
+  const withProblems = valid.filter((f) => f.problems.length);
 
   return (
     <div className="space-y-4">
@@ -155,7 +199,11 @@ export function CsvChecker() {
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 text-sm">
                       <span className="font-mono font-medium text-ink">{f.file}</span>
-                      {f.area && !f.error ? (
+                      {f.area && !f.error && f.problems.length ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-risk-medium-soft px-2 py-0.5 text-xs font-medium text-risk-medium-ink">
+                          <WarningCircleIcon aria-hidden="true" weight="fill" className="h-3.5 w-3.5" /> {f.area.label}, needs fixing
+                        </span>
+                      ) : f.area && !f.error ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-risk-low-soft px-2 py-0.5 text-xs font-medium text-risk-low-ink">
                           <CheckCircleIcon aria-hidden="true" weight="fill" className="h-3.5 w-3.5" /> {f.area.label}
                         </span>
@@ -168,15 +216,16 @@ export function CsvChecker() {
                     {f.error ? (
                       <p className="mt-1 text-[13px] text-risk-high-ink">{f.error}</p>
                     ) : (
-                      <p className="mt-1 text-[13px] text-ink-2">
-                        {f.rows.toLocaleString("en-IN")} rows, {f.ids.size.toLocaleString("en-IN")} students, {f.emptyCells} empty cells
-                        {f.duplicateIds ? `, ${f.duplicateIds} duplicate IDs` : ", no duplicates"}
-                        {f.missingColumns.length ? (
-                          <span className="text-risk-medium-ink">. Missing: {f.missingColumns.join(", ")}</span>
-                        ) : (
-                          "."
-                        )}
-                      </p>
+                      <>
+                        <p className="mt-1 text-[13px] text-ink-2">
+                          {f.rows.toLocaleString("en-IN")} rows, {f.ids.size.toLocaleString("en-IN")} students, {f.emptyCells} empty cells (filled when loaded).
+                        </p>
+                        {f.problems.map((p) => (
+                          <p key={p} className="mt-0.5 text-[13px] text-risk-medium-ink">
+                            {p.charAt(0).toUpperCase() + p.slice(1)}.
+                          </p>
+                        ))}
+                      </>
                     )}
                     <p className="mt-1.5 flex flex-wrap gap-1">
                       {f.columns.map((c) => (
@@ -202,8 +251,16 @@ export function CsvChecker() {
             <p className="text-xs text-ink-3">
               Still missing: {AREAS.filter((a) => !covered.has(a.key)).map((a) => a.label).join(", ")}.
             </p>
+          ) : withProblems.length ? (
+            <p className="text-xs font-medium text-risk-medium-ink">
+              All seven data areas are present, but {withProblems.length} file{withProblems.length === 1 ? " needs" : "s need"} fixing before they can be loaded.
+            </p>
+          ) : inAll === 0 ? (
+            <p className="text-xs font-medium text-risk-medium-ink">All seven data areas are present, but no student appears in every file, so nothing joins.</p>
           ) : (
-            <p className="text-xs font-medium text-risk-low-ink">All seven data areas present and joined on student_id.</p>
+            <p className="text-xs font-medium text-risk-low-ink">
+              All seven data areas present and valid; {inAll.toLocaleString("en-IN")} students join on student_id.
+            </p>
           )}
         </>
       ) : null}

@@ -7,16 +7,31 @@ import { useMemo, useState } from "react";
 import { ALERT_KIND, AlertIcon } from "@/components/alerts/alertMeta";
 import { buttonClass } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Segmented";
+import { markAlertHandled } from "@/lib/api-client";
 import { DOMAIN_LABEL } from "@/lib/labels";
 import type { AlertKind, CampusAlert } from "@/lib/types";
 
 type Filter = "all" | AlertKind;
 
-/** Week-by-week alert feed with type filters and a "handled" toggle. Demo: handled state is not saved. */
-export function AlertFeed({ alerts, currentWeek }: { alerts: CampusAlert[]; currentWeek: string }) {
+/** Week-by-week alert feed with type filters and a "handled" toggle, saved to the backend when live. */
+export function AlertFeed({ alerts, currentWeek, live = false }: { alerts: CampusAlert[]; currentWeek: string; live?: boolean }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [showHandled, setShowHandled] = useState(false);
-  const [handled, setHandled] = useState<string[]>([]);
+  const [handled, setHandled] = useState<string[]>(() => alerts.filter((a) => a.handled).map((a) => a.alertId));
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function toggle(alertId: string, done: boolean) {
+    const next = (h: string[]) => (done ? h.filter((x) => x !== alertId) : [...h, alertId]);
+    setHandled(next);
+    if (!live) return;
+    try {
+      await markAlertHandled(alertId, !done);
+      setSaveError(null);
+    } catch {
+      setHandled((h) => (done ? [...h, alertId] : h.filter((x) => x !== alertId)));
+      setSaveError("Could not save. Is the backend running?");
+    }
+  }
 
   const counts = useMemo(() => {
     const c = new Map<AlertKind, number>();
@@ -93,7 +108,7 @@ export function AlertFeed({ alerts, currentWeek }: { alerts: CampusAlert[]; curr
                       </div>
                       <button
                         type="button"
-                        onClick={() => setHandled((h) => (done ? h.filter((x) => x !== a.alertId) : [...h, a.alertId]))}
+                        onClick={() => toggle(a.alertId, done)}
                         className={buttonClass(done ? "ghost" : "secondary", "sm", "shrink-0")}
                       >
                         {done ? (
@@ -112,7 +127,9 @@ export function AlertFeed({ alerts, currentWeek }: { alerts: CampusAlert[]; curr
           </section>
         );
       })}
-      <p className="text-xs text-ink-3">Demo: marking an alert as handled is not saved.</p>
+      <p role="status" className={`text-xs ${saveError ? "text-risk-high-ink" : "text-ink-3"}`}>
+        {saveError ?? (live ? "Handled alerts are saved." : "Demo: marking an alert as handled is not saved.")}
+      </p>
     </div>
   );
 }
