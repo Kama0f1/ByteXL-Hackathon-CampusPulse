@@ -2,8 +2,6 @@
 
 Student success analytics for the ByteXL hackathon brief "Smart Campus Analytics". CampusPulse joins seven student data sources into one record per student, gives every student a 0-100 Student Success Score, flags academic and placement risk separately with the reasons behind each flag, groups students into segments for group interventions, and lets mentors assign and track follow-ups.
 
-**Submission documents:** [how the Success Score and risk flags work](docs/SUCCESS_SCORE.md) and the [demo script](docs/DEMO_SCRIPT.md).
-
 ## Run it
 
 Needs Python 3.12 and Node.js 20.9+.
