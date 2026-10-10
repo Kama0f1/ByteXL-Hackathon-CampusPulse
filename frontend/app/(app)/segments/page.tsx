@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function SegmentsPage({ searchParams }: { searchParams: Promise<{ focus?: string }> }) {
-  const [{ focus }, { data: report }] = await Promise.all([searchParams, getSegmentReport()]);
+  const [{ focus }, { data: report, origin }] = await Promise.all([searchParams, getSegmentReport()]);
   const initialFocus = report.segments.some((s) => s.segmentId === focus) ? focus : undefined;
 
   return (
@@ -32,7 +32,7 @@ export default async function SegmentsPage({ searchParams }: { searchParams: Pro
       >
         <SegmentExplorer report={report} initialFocus={initialFocus} />
       </Panel>
-      <DemoFootnote endpoint="GET /api/segments" />
+      <DemoFootnote endpoint="GET /api/segments" origin={origin} />
     </div>
   );
 }

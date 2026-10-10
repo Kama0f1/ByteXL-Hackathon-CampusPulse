@@ -18,7 +18,7 @@ import { getStudents } from "@/lib/students";
 
 /** Shell for signed-in app pages. Access is checked in `proxy.ts`. */
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const [{ data: overview }, { data: students }, { data: risks }, { data: alertReport }] = await Promise.all([getCampusOverview(), getStudents(), getRiskReport(), getAlerts()]);
+  const [{ data: overview, origin }, { data: students }, { data: risks }, { data: alertReport }] = await Promise.all([getCampusOverview(), getStudents(), getRiskReport(), getAlerts()]);
   const thisWeek = alertReport.alerts.filter((a) => a.week === `W${alertReport.currentWeek.replace(/\D/g, "")}`);
 
   const counts: NavCounts = {
@@ -83,7 +83,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
               <CommandPalette students={students.map(toPalette)} suggested={risks.flagged.slice(0, 5).map(toPalette)} />
             </div>
             <span className="hidden md:block">
-              <DemoBadge />
+              <DemoBadge origin={origin} />
             </span>
             <AlertsBell alerts={thisWeek.slice(0, 8)} total={thisWeek.length} />
             <ThemeToggle />

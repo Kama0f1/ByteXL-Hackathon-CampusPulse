@@ -1,7 +1,8 @@
+import { withFallback } from "@/lib/api";
 import { getDemoInterventionReport } from "@/lib/demo/campus";
-import type { DataResult, InterventionReport } from "@/lib/types";
+import type { InterventionReport, DataResult } from "@/lib/types";
 
-/** Interventions and outcomes. Proposed endpoint: `GET /api/interventions`. Currently demo data. */
+/** Interventions and outcomes: `GET /api/interventions`, or the demo campus if the backend is down. */
 export async function getInterventionReport(): Promise<DataResult<InterventionReport>> {
-  return { origin: "demo", data: getDemoInterventionReport() };
+  return withFallback("/api/interventions", getDemoInterventionReport);
 }

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function InterventionsPage() {
-  const { data: report } = await getInterventionReport();
+  const { data: report, origin } = await getInterventionReport();
   const count = (status: string) => report.interventions.filter((i) => i.status === status).length;
   const completed = report.outcomes.reduce((s, o) => s + o.completed, 0);
   const improved = report.outcomes.reduce((s, o) => s + o.improved, 0);
@@ -29,7 +29,7 @@ export default async function InterventionsPage() {
       />
 
       <div className="rise" style={{ "--i": 1 } as React.CSSProperties}>
-        <InterventionBoard initial={report.interventions} />
+        <InterventionBoard initial={report.interventions} live={origin === "api"} />
       </div>
 
       <Panel
@@ -93,7 +93,7 @@ export default async function InterventionsPage() {
         <p className="mt-3 text-xs text-ink-3">Early signal, not proof: score change is measured from the week each follow-up started.</p>
       </Panel>
 
-      <DemoFootnote endpoint="GET /api/interventions" />
+      <DemoFootnote endpoint="GET /api/interventions" origin={origin} />
     </div>
   );
 }

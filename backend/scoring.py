@@ -1,10 +1,10 @@
 import pandas as pd
 
 def calculate_student_success_score(row):
-    " " "
+    """
     Calculates the SSS (0-100) based on SRS weights.
     Adjusts weights dynamically if data is missing.
-    " " "
+    """
     dimensions = {
         'academic': (row.get('cgpa', 0) / 10.0 * 100, 25),
         'attendance': (row.get('attendance_pct', 0), 20),

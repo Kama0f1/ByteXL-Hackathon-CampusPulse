@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 const RISK_FILTERS: RiskFilter[] = ["all", "any-high", "academic-high", "placement-high", "both-high"];
 
 export default async function StudentsPage({ searchParams }: { searchParams: Promise<{ risk?: string; segment?: string }> }) {
-  const [{ risk, segment }, { data: rows }, { data: segments }] = await Promise.all([searchParams, getStudents(), getSegmentReport()]);
+  const [{ risk, segment }, { data: rows, origin }, { data: segments }] = await Promise.all([searchParams, getStudents(), getSegmentReport()]);
   const departments = [...new Set(rows.map((r) => r.department))];
   const initialRisk = RISK_FILTERS.includes(risk as RiskFilter) ? (risk as RiskFilter) : "all";
   const initialSegment = segments.segments.some((s) => s.segmentId === segment) ? segment : "all";
@@ -30,7 +30,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         initialRisk={initialRisk}
         initialSegment={initialSegment}
       />
-      <DemoFootnote endpoint="GET /api/students" />
+      <DemoFootnote endpoint="GET /api/students" origin={origin} />
     </div>
   );
 }

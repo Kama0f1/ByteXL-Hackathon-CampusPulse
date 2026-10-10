@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 const WEIGHT_TONES = ["bg-ink", "bg-ink/80", "bg-ink/65", "bg-ink/50", "bg-ink/40", "bg-ink/30", "bg-ink/20"];
 
 export default async function DataSourcesPage() {
-  const { data } = await getPipelineReport();
+  const { data, origin } = await getPipelineReport();
   const totalRows = data.sources.reduce((s, x) => s + x.rows, 0);
   const totalMissing = data.sources.reduce((s, x) => s + x.missingValues, 0);
   const totalDupes = data.sources.reduce((s, x) => s + x.duplicatesRemoved, 0);
@@ -163,7 +163,7 @@ export default async function DataSourcesPage() {
         <p className="mt-3 text-xs text-ink-3">Proposed handling: a student missing from one source keeps their record, and that area is estimated from the department median and labelled as estimated.</p>
       </Panel>
 
-      <DemoFootnote endpoint="GET /api/pipeline" />
+      <DemoFootnote endpoint="GET /api/pipeline" origin={origin} />
     </div>
   );
 }

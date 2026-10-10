@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Segmented } from "@/components/ui/Segmented";
+import { moveIntervention } from "@/lib/api";
 import { formatSignedInt } from "@/lib/format";
 import { DOMAIN_LABEL, STATUS_LABEL } from "@/lib/labels";
 import type { Intervention, InterventionStatus, RiskDomain } from "@/lib/types";
@@ -24,14 +25,15 @@ const NEXT: Partial<Record<InterventionStatus, InterventionStatus>> = {
 
 const STEP = 6;
 
-/** Kanban of follow-ups. Drag a card or use its move button. Demo: changes are not saved. */
-export function InterventionBoard({ initial }: { initial: Intervention[] }) {
+/** Kanban of follow-ups. Drag a card or use its move button. Saved to the backend when the data is live. */
+export function InterventionBoard({ initial, live = false }: { initial: Intervention[]; live?: boolean }) {
   const [items, setItems] = useState(initial);
   const [domain, setDomain] = useState<"all" | RiskDomain>("all");
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState<Record<InterventionStatus, number>>({ suggested: STEP, assigned: STEP, "in-progress": STEP, completed: STEP });
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<InterventionStatus | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -40,8 +42,20 @@ export function InterventionBoard({ initial }: { initial: Intervention[] }) {
     );
   }, [items, domain, query]);
 
-  function move(id: string, status: InterventionStatus) {
+  async function move(id: string, status: InterventionStatus) {
+    const previous = items.find((i) => i.interventionId === id);
+    if (!previous || previous.status === status) return;
     setItems((list) => list.map((i) => (i.interventionId === id ? { ...i, status } : i)));
+    if (!live) return;
+    try {
+      // Moving a suggested card creates the intervention, so the backend may return a new id.
+      const saved = await moveIntervention(id, status);
+      setItems((list) => list.map((i) => (i.interventionId === id ? { ...i, interventionId: saved.interventionId, status: saved.status } : i)));
+      setSaveError(null);
+    } catch {
+      setItems((list) => list.map((i) => (i.interventionId === id ? previous : i)));
+      setSaveError(`Could not save ${previous.studentName}'s card. Is the backend running?`);
+    }
   }
 
   return (
@@ -67,7 +81,9 @@ export function InterventionBoard({ initial }: { initial: Intervention[] }) {
             { value: "placement", label: "Placement" },
           ]}
         />
-        <p className="text-xs text-ink-3 sm:ml-auto">Drag cards between columns. Demo: changes are not saved.</p>
+        <p role="status" className={`text-xs sm:ml-auto ${saveError ? "text-risk-high-ink" : "text-ink-3"}`}>
+          {saveError ?? (live ? "Drag cards between columns. Changes are saved." : "Drag cards between columns. Demo: changes are not saved.")}
+        </p>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">

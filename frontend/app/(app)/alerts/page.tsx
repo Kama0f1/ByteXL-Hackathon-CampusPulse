@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function AlertsPage() {
-  const { data } = await getAlerts();
+  const { data, origin } = await getAlerts();
   const thisWeek = data.alerts.filter((a) => a.week === `W${data.currentWeek.replace(/\D/g, "")}`).length;
   const high = data.alerts.filter((a) => a.severity === "high").length;
 
@@ -41,7 +41,7 @@ export default async function AlertsPage() {
       >
         <AlertFeed alerts={data.alerts} currentWeek={data.currentWeek} />
       </Panel>
-      <DemoFootnote endpoint="GET /api/alerts" />
+      <DemoFootnote endpoint="GET /api/alerts" origin={origin} />
     </div>
   );
 }

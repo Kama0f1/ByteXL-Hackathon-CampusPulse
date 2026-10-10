@@ -25,7 +25,7 @@ export const metadata: Metadata = {
 const TONE_BAR = { strong: "bg-risk-low", mixed: "bg-academic", watch: "bg-risk-medium", support: "bg-risk-high" } as const;
 
 export default async function OverviewPage() {
-  const [{ data }, { data: interventions }, { data: alertReport }] = await Promise.all([getCampusOverview(), getInterventionReport(), getAlerts()]);
+  const [{ data, origin }, { data: interventions }, { data: alertReport }] = await Promise.all([getCampusOverview(), getInterventionReport(), getAlerts()]);
   const newAlerts = alertReport.alerts.filter((a) => a.week === `W${alertReport.currentWeek.replace(/\D/g, "")}`);
   const unassigned = interventions.interventions.filter((i) => i.status === "suggested").length;
   const { summary } = data;
@@ -224,7 +224,7 @@ export default async function OverviewPage() {
         </ul>
       </Panel>
 
-      <DemoFootnote endpoint="GET /api/overview" />
+      <DemoFootnote endpoint="GET /api/overview" origin={origin} />
     </div>
   );
 }

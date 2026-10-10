@@ -4,20 +4,40 @@ import { CheckIcon, LightningIcon } from "@phosphor-icons/react/dist/ssr";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { buttonClass } from "@/components/ui/Button";
+import { createIntervention } from "@/lib/api";
 import { DOMAIN_LABEL } from "@/lib/labels";
 import type { StudentProfile } from "@/lib/types";
 
 type ActionCardProps = {
+  studentId: string;
   action: StudentProfile["suggestedAction"];
   mentor: string;
   mentors: string[];
   alreadyAssigned: boolean;
+  /** Save the assignment to the backend (false on demo data). */
+  live?: boolean;
 };
 
-/** The suggested next step, assignable in one click. Demo only: nothing is saved. */
-export function ActionCard({ action, mentor, mentors, alreadyAssigned }: ActionCardProps) {
+/** The suggested next step, assignable in one click. Saved to the interventions board when live. */
+export function ActionCard({ studentId, action, mentor, mentors, alreadyAssigned, live = false }: ActionCardProps) {
   const [owner, setOwner] = useState(mentor);
   const [assigned, setAssigned] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function assign() {
+    if (!live) return setAssigned(true);
+    setSaving(true);
+    setError(null);
+    try {
+      await createIntervention({ studentId, label: action.label, domain: action.domain, owner, status: "assigned" });
+      setAssigned(true);
+    } catch {
+      setError("Could not save. Is the backend running?");
+    } finally {
+      setSaving(false);
+    }
+  }
   const monitoring = action.id === "monitor";
 
   return (
@@ -52,9 +72,11 @@ export function ActionCard({ action, mentor, mentors, alreadyAssigned }: ActionC
                   <span className="inline-flex items-center gap-2 rounded-full bg-[#c8f13c] px-3.5 py-2 text-[13px] font-semibold text-[#0d1117]">
                     <CheckIcon aria-hidden="true" weight="bold" className="h-4 w-4" /> Assigned to {owner}
                   </span>
-                  <button type="button" onClick={() => setAssigned(false)} className="text-[13px] text-white/60 underline-offset-4 hover:text-white hover:underline">
-                    Undo
-                  </button>
+                  {live ? null : (
+                    <button type="button" onClick={() => setAssigned(false)} className="text-[13px] text-white/60 underline-offset-4 hover:text-white hover:underline">
+                      Undo
+                    </button>
+                  )}
                 </motion.div>
               ) : (
                 <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-wrap items-center gap-2">
@@ -73,13 +95,15 @@ export function ActionCard({ action, mentor, mentors, alreadyAssigned }: ActionC
                       </option>
                     ))}
                   </select>
-                  <button type="button" onClick={() => setAssigned(true)} className={buttonClass("primary", "md", "!bg-white !text-[#0d1117]")}>
-                    Assign follow-up
+                  <button type="button" onClick={assign} disabled={saving} className={buttonClass("primary", "md", "!bg-white !text-[#0d1117] disabled:opacity-60")}>
+                    {saving ? "Saving..." : "Assign follow-up"}
                   </button>
                 </motion.div>
               )}
             </AnimatePresence>
-            <p className="mt-3 text-[11px] text-white/45">Demo: assignments are not saved.</p>
+            <p role="status" className={`mt-3 text-[11px] ${error ? "text-[#ffb4a8]" : "text-white/45"}`}>
+              {error ?? (live ? "Adds it to the interventions board." : "Demo: assignments are not saved.")}
+            </p>
           </div>
         )}
       </div>

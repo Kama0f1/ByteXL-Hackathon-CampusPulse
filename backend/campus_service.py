@@ -68,6 +68,15 @@ AREA_LABEL = {a["key"]: a["label"] for a in AREAS}
 AREA_WEIGHT = {a["key"]: a["weight"] for a in AREAS}
 
 DEPARTMENTS = [("CSE", 180), ("AI & DS", 140), ("ECE", 120), ("Mechanical", 110), ("Civil", 90)]
+# Five subjects x 40 classes = the ~200 classes held behind every attendance_pct in Attendance.csv.
+DEPT_SUBJECTS = {
+    "CSE": ["Operating Systems", "DBMS", "Computer Networks", "Compiler Design", "Software Engineering"],
+    "AI & DS": ["Machine Learning", "Statistics", "Data Mining", "Deep Learning", "Big Data Systems"],
+    "ECE": ["Signals & Systems", "Analog Circuits", "VLSI Design", "Microprocessors", "Communication Systems"],
+    "Mechanical": ["Thermodynamics", "Fluid Mechanics", "Machine Design", "Manufacturing", "Heat Transfer"],
+    "Civil": ["Structural Analysis", "Surveying", "Geotechnics", "Concrete Technology", "Transportation"],
+}
+CLASSES_PER_SUBJECT = 40
 MENTORS = [
     "Dr. Anita Deshpande", "Prof. Rajesh Kumar", "Dr. Farah Siddiqui", "Prof. Suresh Nair",
     "Dr. Meenakshi Rao", "Prof. Harpreet Bains", "Dr. Thomas Mathew", "Prof. Kavita Joshi",
@@ -224,6 +233,7 @@ class Student:
     action: dict[str, Any] = field(default_factory=dict)
     interventions: list[dict[str, Any]] = field(default_factory=list)
     segment_id: str = ""
+    classes_attended: int = 0
 
     @property
     def sid(self) -> str:
@@ -486,6 +496,8 @@ def get_campus() -> Campus:
             "attendancePct": round(att, 1),
             "lmsCompletionPct": round(lms_pct, 1),
             "codingScore": round(coding, 1),
+            # Model probability; falls back to the SRS readiness score if the model can't run.
+            "placementProbability": round(prob if prob is not None else clamp(readiness / 100, 0, 1), 2),
         }
         s = Student(
             row=row, email=ident["email"], values=values, history=history, score_history=score_history,
@@ -497,6 +509,7 @@ def get_campus() -> Campus:
             academic={"level": a_level, "index": int(round(a_now)), "factors": a_factors},
             placement={"level": p_level, "index": int(round(p_now)), "factors": p_factors},
             a_hist=a_hist, p_hist=p_hist, change_factors=change_factors,
+            classes_attended=int(r["classes_attended"]),
         )
 
         # Suggested follow-up: matched to the leading factor of the riskier track.
@@ -549,6 +562,94 @@ def _seed_interventions(students: list[Student]) -> None:
 def refresh() -> None:
     """Re-read the CSVs on the next request."""
     get_campus.cache_clear()
+    _all_alerts.cache_clear()
+
+
+def _subject_attendance(s: Student) -> list[dict[str, Any]]:
+    """Split the student's real classes_attended total across their department's five subjects (simulated split)."""
+    subjects = DEPT_SUBJECTS.get(s.row["department"], DEPT_SUBJECTS["CSE"])
+    total = max(0, min(s.classes_attended, CLASSES_PER_SUBJECT * len(subjects)))
+    rng = random.Random(_seed("subjects", s.sid))
+    weights = [max(0.2, rng.gauss(1.0, 0.18)) for _ in subjects]
+    counts = [min(CLASSES_PER_SUBJECT, int(w * total / sum(weights))) for w in weights]
+    order = sorted(range(len(subjects)), key=lambda i: -weights[i])
+    i = 0
+    while sum(counts) < total:  # hand out the rounding remainder
+        j = order[i % len(order)]
+        if counts[j] < CLASSES_PER_SUBJECT:
+            counts[j] += 1
+        i += 1
+    return [{"subject": name, "pct": r1(c / CLASSES_PER_SUBJECT * 100)} for name, c in zip(subjects, counts)]
+
+
+# --------------------------------------------------------------------------- #
+# early-warning alerts (rules run on the weekly history)
+# --------------------------------------------------------------------------- #
+ACADEMIC_AREAS = {"academics", "attendance", "lms"}
+
+
+def _alerts_for(s: Student) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    base = {"studentId": s.sid, "studentName": s.row["name"], "department": s.row["department"]}
+    recent = range(LAST - LOOKBACK + 1, LAST + 1)
+    att = s.history["attendance"]  # the attendance area score is the attendance % itself
+
+    week = next((w for w in recent if att[w - 1] >= 75 and att[w] < 75), None)
+    if week is not None:
+        low = min(_subject_attendance(s), key=lambda x: x["pct"])
+        out.append({**base, "alertId": f"{s.sid}-att", "kind": "attendance-threshold", "severity": "high", "domain": "academic",
+                    "title": "Attendance fell below 75%",
+                    "detail": f"{att[week - 1]:.0f}% to {s.row['attendancePct']:.0f}%. Lowest in {low['subject']} at {low['pct']:.0f}%; below 75% blocks exam eligibility.",
+                    "week": f"W{week + 1}"})
+
+    for domain, risk, hist in (("academic", s.academic, s.a_hist), ("placement", s.placement, s.p_hist)):
+        if risk["level"] != "high":
+            continue
+        week = next((w for w in recent if hist[w - 1] < RISK_HIGH <= hist[w]), None)
+        if week is None:
+            continue
+        lead = risk["factors"][0] if risk["factors"] else None
+        out.append({**base, "alertId": f"{s.sid}-{domain}-high", "kind": "new-high-risk", "severity": "high", "domain": domain,
+                    "title": f"Now high {domain} risk",
+                    "detail": f"{lead['factor']} explains {round(lead['share'] * 100)}%: {lead['evidence']}." if lead else "Several small gaps combined.",
+                    "week": f"W{week + 1}"})
+
+    drop = s.score_history[LAST] - s.score_history[LAST - LOOKBACK]
+    if drop <= -5:
+        worst = next((f for f in s.change_factors if f["points"] < 0), None)
+        out.append({**base, "alertId": f"{s.sid}-drop", "kind": "score-drop", "severity": "high" if drop <= -8 else "medium",
+                    "domain": "placement" if worst and worst["key"] not in ACADEMIC_AREAS else "academic",
+                    "title": f"Success score down {abs(drop):.0f} points in 4 weeks",
+                    "detail": f"Mostly from {worst['label']} ({round(worst['share'] * 100)}% of the drop)." if worst else "Spread across several areas.",
+                    "week": f"W{LAST + 1}"})
+
+    if s.history["lms"][LAST - LOOKBACK] - s.history["lms"][LAST] >= 15:
+        out.append({**base, "alertId": f"{s.sid}-lms", "kind": "lms-drop", "severity": "medium", "domain": "academic",
+                    "title": "LMS activity dropped sharply",
+                    "detail": f"{s.row['lmsCompletionPct']:.0f}% of assignments submitted, {s.lms_logins} logins in 30 days.",
+                    "week": f"W{LAST + 1}"})
+
+    prob = s.row["placementProbability"]
+    if s.row["semester"] >= 7 and prob < 0.25:
+        gap = s.placement["factors"][0]["factor"].lower() if s.placement["factors"] else "placement tests"
+        out.append({**base, "alertId": f"{s.sid}-placement", "kind": "placement-prediction", "severity": "high", "domain": "placement",
+                    "title": "Predicted to miss placement",
+                    "detail": f"{round(prob * 100)}% chance of being placed. Main gap: {gap}.",
+                    "week": f"W{LAST + 1}"})
+    return out
+
+
+@lru_cache(maxsize=1)
+def _all_alerts() -> tuple[dict[str, Any], ...]:
+    rank = {"high": 0, "medium": 1}
+    alerts = [a for s in get_campus().students for a in _alerts_for(s)]
+    alerts.sort(key=lambda a: (-int(a["week"][1:]), rank[a["severity"]]))
+    return tuple(to_native(alerts))
+
+
+def get_alerts() -> dict[str, Any]:
+    c = get_campus()
+    return {"generatedAt": c.generated_at, "currentWeek": f"Week {WEEKS}", "alerts": list(_all_alerts())}
 
 
 # --------------------------------------------------------------------------- #
@@ -747,6 +848,8 @@ def get_student(student_id: str) -> dict[str, Any] | None:
         "scoreHistory": s.score_history, "signals": signals,
         "academic": s.academic, "placement": s.placement, "scoreChangeFactors": s.change_factors,
         "suggestedAction": s.action, "interventions": interventions,
+        "subjectAttendance": _subject_attendance(s),
+        "alerts": [a for a in _all_alerts() if a["studentId"] == s.sid],
         "previousFlaggedId": queue[at - 1].sid if at > 0 else None,
         "nextFlaggedId": queue[at + 1].sid if 0 <= at < len(queue) - 1 else (queue[0].sid if at < 0 and queue else None),
     })

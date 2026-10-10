@@ -1,10 +1,14 @@
 """
-Campus-Pulse - FastAPI entry point with Supabase Integration.
+Campus-Pulse - FastAPI entry point.
 
-Serves the JSON API the Next.js frontend reads, and can start the frontend too.
-Expects a .env file in the root directory containing:
-    SUPABASE_URL=your_project_url
-    SUPABASE_KEY=your_anon_or_service_key
+Serves the JSON API the Next.js frontend reads (payloads built by campus_service.py from
+the seven CSVs in ../data), and can start the frontend too:
+
+    python main.py               # API on http://127.0.0.1:8000  (docs at /docs)
+    python main.py --frontend    # API + Next.js on http://127.0.0.1:3000
+
+Settings come from environment variables or backend/.env (see .env.example).
+Never commit keys: .env is git-ignored.
 """
 from __future__ import annotations
 
@@ -29,45 +33,33 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
-from supabase import create_client, Client
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+
+load_dotenv(BACKEND_DIR / ".env")
+
+import campus_service  # noqa: E402  (needs BACKEND_DIR on sys.path)
 
 FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 DEFAULT_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()]
 
 # --------------------------------------------------------------------------- #
-# Supabase Initialization
-# --------------------------------------------------------------------------- #
-load_dotenv()
-
-SUPABASE_URL = "https://yyrifmorokitllxjttj.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5cmlmbW9yb3hraXRsbHhqdHRqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MjE4MTcsImV4cCI6MjEwNzE5NzgxN30.GGMzG7kWAJ5NImhEMqto50GwuKVPpTO2zlN02PjP94o"
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("Warning: SUPABASE_URL or SUPABASE_KEY environment variables are missing.")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# --------------------------------------------------------------------------- #
 # app
 # --------------------------------------------------------------------------- #
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Verify database connection on startup instead of loading CSVs
     try:
-        # A lightweight query to verify the connection is active
-        supabase.table("students").select("id").limit(1).execute()
-        print("Campus-Pulse: Supabase connected successfully. ML Models ready.")
-    except Exception as exc: 
-        print(f"Campus-Pulse: Database connection failed on startup: {exc!r}")
+        campus = campus_service.get_campus()
+        print(f"Campus-Pulse: {len(campus.students)} students loaded and scored.")
+    except Exception as exc:  # keep the API up so /api/health can report the problem
+        print(f"Campus-Pulse: could not build the campus from the CSVs: {exc!r}")
     yield
 
 
 app = FastAPI(
     title="Campus-Pulse API",
-    description="Student success, risk, segmentation and intervention analytics powered by Supabase.",
+    description="Student success, risk, segmentation and intervention analytics.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -112,65 +104,66 @@ def root():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "database": "supabase"}
+    try:
+        students = len(campus_service.get_campus().students)
+    except Exception as exc:
+        return JSONResponse(status_code=503, content={"status": "error", "detail": repr(exc)})
+    return {"status": "ok", "students": students}
 
 @app.get("/api/overview")
 def overview():
-    response = supabase.table("overview").select("*").single().execute()
-    return response.data
+    return campus_service.get_overview()
 
 @app.get("/api/students")
 def students():
-    response = supabase.table("students").select("*").execute()
-    return response.data
+    return campus_service.get_students()
 
 @app.get("/api/students/{student_id}")
 def student(student_id: str):
-    response = supabase.table("students").select("*").eq("id", student_id).execute()
-    if not response.data:
+    profile = campus_service.get_student(student_id.upper())
+    if profile is None:
         raise HTTPException(status_code=404, detail=f"Student {student_id} not found")
-    return response.data[0]
+    return profile
 
 @app.get("/api/risks")
 def risks():
-    response = supabase.table("risks").select("*").execute()
-    return response.data
+    return campus_service.get_risks()
 
 @app.get("/api/segments")
 def segments():
-    response = supabase.table("segments").select("*").execute()
-    return response.data
+    return campus_service.get_segments()
+
+@app.get("/api/alerts")
+def alerts():
+    return campus_service.get_alerts()
 
 @app.get("/api/interventions")
 def interventions():
-    response = supabase.table("interventions").select("*").execute()
-    return response.data
+    return campus_service.get_interventions()
 
 @app.post("/api/interventions", status_code=201)
 def create_intervention(body: InterventionCreate):
-    new_intervention = {
-        "student_id": body.studentId,
-        "label": body.label,
-        "domain": body.domain,
-        "owner": body.owner,
-        "status": body.status
-    }
-    response = supabase.table("interventions").insert(new_intervention).execute()
-    if not response.data:
-        raise HTTPException(status_code=400, detail="Failed to create intervention")
-    return response.data[0]
+    item = campus_service.create_intervention(body.studentId, body.label, body.domain, body.owner, body.status)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"Student {body.studentId} not found")
+    return item
 
 @app.patch("/api/interventions/{intervention_id}")
 def update_intervention(intervention_id: str, body: InterventionStatusUpdate):
-    response = supabase.table("interventions").update({"status": body.status}).eq("id", intervention_id).execute()
-    if not response.data:
+    # Suggested cards (SUG-xxx) are not stored yet: moving one creates the intervention.
+    if intervention_id.startswith("SUG-"):
+        card = next((i for i in campus_service.get_interventions()["interventions"] if i["interventionId"] == intervention_id), None)
+        if card is None:
+            raise HTTPException(status_code=404, detail=f"Intervention {intervention_id} not found")
+        item = campus_service.create_intervention(card["studentId"], card["label"], card["domain"], card["owner"], body.status)
+        return {"interventionId": item["interventionId"], "status": item["status"]}
+    if not campus_service.update_intervention_status(intervention_id, body.status):
         raise HTTPException(status_code=404, detail=f"Intervention {intervention_id} not found")
     return {"interventionId": intervention_id, "status": body.status}
 
 @app.get("/api/pipeline")
 def pipeline():
-    response = supabase.table("pipeline").select("*").execute()
-    return response.data
+    return campus_service.get_pipeline()
 
 @app.post("/api/predict")
 def predict(body: PredictRequest):
@@ -186,8 +179,9 @@ def predict(body: PredictRequest):
 
 @app.post("/api/refresh")
 def refresh():
-    """Returns a status indicating data is pulled live from the database."""
-    return {"status": "Database connection is live. No CSV refresh needed."}
+    """Re-read the CSVs (e.g. after replacing a file in ../data) and rebuild every payload."""
+    campus_service.refresh()
+    return {"status": "ok", "students": len(campus_service.get_campus().students)}
 
 # --------------------------------------------------------------------------- #
 # `python main.py`: run the API, optionally together with the Next.js frontend

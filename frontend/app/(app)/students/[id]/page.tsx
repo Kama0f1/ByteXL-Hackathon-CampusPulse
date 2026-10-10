@@ -141,7 +141,14 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         </Panel>
         <div className="flex flex-col gap-4 xl:col-span-5">
           <div className="rise" style={{ "--i": 5 } as React.CSSProperties}>
-            <ActionCard action={s.suggestedAction} mentor={s.mentor} mentors={mentors} alreadyAssigned={s.interventions.some((i) => i.status !== "completed")} />
+            <ActionCard
+              studentId={s.studentId}
+              action={s.suggestedAction}
+              mentor={s.mentor}
+              mentors={mentors}
+              alreadyAssigned={s.interventions.some((i) => i.status !== "completed")}
+              live={result.origin === "api"}
+            />
           </div>
           <Panel index={6} title="What changed in four weeks">
             <ChangeBreakdown factors={s.scoreChangeFactors} change={s.scoreChange} />
@@ -180,7 +187,7 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         </Panel>
       </div>
 
-      <DemoFootnote endpoint={`GET /api/students/${s.studentId}`} />
+      <DemoFootnote endpoint={`GET /api/students/${s.studentId}`} origin={result.origin} />
     </div>
   );
 }

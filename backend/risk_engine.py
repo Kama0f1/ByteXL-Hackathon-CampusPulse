@@ -1,7 +1,7 @@
 def assess_academic_risk(row):
-    " " "
+    """
     Evaluates Academic Risk based on specific SRS thresholds.
-    " " "
+    """
     cgpa = row.get('cgpa', 10.0)
     attendance = row.get('attendance_pct', 100.0)
     backlogs = row.get('backlogs', 0)
@@ -23,9 +23,9 @@ def assess_academic_risk(row):
     return "Low", ["On track academically"]
 
 def assess_placement_risk(row):
-    " " "
+    """
     Evaluates Placement Readiness based on SRS thresholds.
-    " " "
+    """
     coding = row.get('coding_score', 0)
     aptitude = row.get('aptitude_score', 0)
     mock = row.get('mock_interview_score', 0)

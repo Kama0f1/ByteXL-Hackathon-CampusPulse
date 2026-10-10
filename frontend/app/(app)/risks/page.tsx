@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RisksPage() {
-  const [{ data: report }, { data: rows }] = await Promise.all([getRiskReport(), getStudents()]);
+  const [{ data: report, origin }, { data: rows }] = await Promise.all([getRiskReport(), getStudents()]);
   const weeks = report.weeklyRisk.map((w) => w.week);
   const predicted = rows.filter((r) => r.semester >= 7 && r.placementProbability < 0.4).sort((a, b) => a.placementProbability - b.placementProbability);
 
@@ -137,7 +137,7 @@ export default async function RisksPage() {
         </ul>
       </Panel>
 
-      <DemoFootnote endpoint="GET /api/risks" />
+      <DemoFootnote endpoint="GET /api/risks" origin={origin} />
     </div>
   );
 }
