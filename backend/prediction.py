@@ -1,3 +1,4 @@
+
 import joblib
 import pandas as pd
 import os
@@ -13,9 +14,7 @@ except FileNotFoundError:
     print("Warning: placement_model.joblib not found. Predictions will fail.")
 
 def predict_placement(student_data):
-    " " "
-    Takes a dictionary of student features and predicts if they will be placed.
-    " " "
+    
     if placement_model is None:
         return {"error": "Model not loaded"}
         
