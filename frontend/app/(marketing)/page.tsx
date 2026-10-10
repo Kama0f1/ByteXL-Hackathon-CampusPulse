@@ -1,7 +1,8 @@
 import { ArrowUpRightIcon, CommandIcon, HandshakeIcon, UsersThreeIcon, WarningDiamondIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { LineChart } from "@/components/charts/LineChart";
-import { CampusField, type FieldStudent } from "@/components/landing/CampusField";
+import { CampusField } from "@/components/landing/CampusField";
+import { type FieldStudent, packField } from "@/components/landing/campusFieldData";
 import { LandingNav } from "@/components/landing/LandingNav";
 import { Reveal } from "@/components/landing/Reveal";
 import { RiskExplainer } from "@/components/students/RiskExplainer";
@@ -22,7 +23,12 @@ const STORY = [
   { week: "Week 12", title: "Back on track", body: "Academic risk falls from high to low, and the follow-up is recorded as effective.", tone: "bg-risk-low" },
 ];
 
-export default async function LandingPage() {
+// Rendered per request, but the backend data behind it is reused for a minute:
+// the landing page made eight backend calls on every visit.
+export const dynamic = "force-dynamic";
+const LANDING_TTL_MS = 60_000;
+
+async function fetchLandingData() {
   const [{ data: overview }, { data: rows }, { data: segments }, { data: risks }, { data: interventions }, { data: pipeline }] = await Promise.all([
     getCampusOverview(),
     getStudents(),
@@ -32,7 +38,25 @@ export default async function LandingPage() {
     getPipelineReport(),
   ]);
   // Show the most urgent flagged student, or anyone if nobody is flagged.
-  const example = (await getStudentProfile((risks.flagged[0] ?? rows[0]).studentId))!.data;
+  const profile = await getStudentProfile((risks.flagged[0] ?? rows[0]).studentId);
+  return { overview, rows, segments, risks, interventions, pipeline, example: profile!.data, live: profile!.origin === "api" };
+}
+
+let landingCache: { at: number; data: Promise<Awaited<ReturnType<typeof fetchLandingData>>> } | null = null;
+
+/** Live data is cached for LANDING_TTL_MS; demo fallback data is never cached, so the page goes live as soon as the backend is up. */
+async function getLandingData() {
+  if (landingCache && Date.now() - landingCache.at < LANDING_TTL_MS) {
+    const cached = await landingCache.data.catch(() => null);
+    if (cached?.live) return cached;
+  }
+  const data = fetchLandingData();
+  landingCache = { at: Date.now(), data };
+  return data;
+}
+
+export default async function LandingPage() {
+  const { overview, rows, segments, interventions, pipeline, example } = await getLandingData();
 
   const readiness = new Map(segments.points.map((p) => [p.studentId, p]));
   const field: FieldStudent[] = rows.map((r) => ({
@@ -92,7 +116,7 @@ export default async function LandingPage() {
                     </p>
                     <p className="text-[11px] text-white/45">Simulated campus. Hover any dot.</p>
                   </div>
-                  <CampusField students={field} segments={segments.segments.map((s) => ({ id: s.segmentId, name: s.name }))} />
+                  <CampusField data={packField(field, segments.segments.map((s) => ({ id: s.segmentId, name: s.name })))} />
                 </div>
               </div>
             </Reveal>

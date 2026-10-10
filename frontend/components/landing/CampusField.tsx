@@ -4,18 +4,7 @@ import { useReducedMotion } from "motion/react";
 import { useMemo, useState } from "react";
 import { Segmented } from "@/components/ui/Segmented";
 import type { RiskLevel } from "@/lib/types";
-
-export type FieldStudent = {
-  id: string;
-  name: string;
-  department: string;
-  score: number;
-  academic: RiskLevel;
-  placement: RiskLevel;
-  segment: string;
-  academicReadiness: number;
-  placementReadiness: number;
-};
+import { type FieldData, type FieldStudent, unpackField } from "./campusFieldData";
 
 type Mode = "risk" | "segments" | "map";
 
@@ -28,11 +17,15 @@ function severity(s: FieldStudent): RiskLevel {
   return r === 2 ? "high" : r === 1 ? "medium" : "low";
 }
 
-const FILL: Record<RiskLevel, string> = {
-  high: "var(--risk-high)",
-  medium: "var(--risk-medium)",
-  low: "rgb(255 255 255 / 0.28)",
-};
+const DOT_CLASS: Record<RiskLevel, string> = { high: "cf-h", medium: "cf-m", low: "cf-l" };
+
+/** Shared dot styles, written once instead of on 1,000 elements. Delays stagger the regroup animation. */
+const DOT_CSS =
+  ".cf-h{fill:var(--risk-high)}.cf-m{fill:var(--risk-medium)}.cf-l{fill:rgb(255 255 255/0.28)}" +
+  ".cf-anim circle{transition:transform 900ms cubic-bezier(0.77,0,0.175,1),r 150ms ease}" +
+  Array.from({ length: 40 }, (_, k) => `.cf-anim circle:nth-of-type(40n+${k + 1}){transition-delay:${k * 6}ms,0ms}`).join("");
+
+const r1 = (n: number) => Math.round(n * 10) / 10;
 
 type Layout = { pos: Map<string, [number, number]>; labels: { x: number; y: number; text: string; anchor?: "start" | "middle" }[] };
 
@@ -97,7 +90,9 @@ function mapLayout(students: FieldStudent[]): Layout {
 }
 
 /** The whole campus as dots. Switch views to watch the same students regroup. */
-export function CampusField({ students, segments }: { students: FieldStudent[]; segments: { id: string; name: string }[] }) {
+export function CampusField({ data }: { data: FieldData }) {
+  const students = useMemo(() => unpackField(data), [data]);
+  const segments = data.segments;
   const [mode, setMode] = useState<Mode>("risk");
   const [hover, setHover] = useState<FieldStudent | null>(null);
   const reduce = useReducedMotion();
@@ -139,29 +134,26 @@ export function CampusField({ students, segments }: { students: FieldStudent[]; 
       <div className="relative">
         <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label={`${students.length} students arranged ${mode === "risk" ? "by risk level" : mode === "segments" ? "by segment" : "by academic and placement readiness"}.`}>
           {layout.labels.map((l) => (
-            <text key={`${mode}-${l.text}`} x={l.x} y={l.y} textAnchor={l.anchor ?? "start"} className="fill-white/55 text-[11px] font-medium">
+            <text key={`${mode}-${l.text}`} x={r1(l.x)} y={r1(l.y)} textAnchor={l.anchor ?? "start"} className="fill-white/55 text-[11px] font-medium">
               {l.text}
             </text>
           ))}
-          {students.map((s, i) => {
-            const [x, y] = layout.pos.get(s.id) ?? [0, 0];
-            const level = severity(s);
-            return (
-              <circle
-                key={s.id}
-                r={hover?.id === s.id ? 6 : 4}
-                cx={0}
-                cy={0}
-                fill={FILL[level]}
-                onPointerEnter={() => setHover(s)}
-                onPointerLeave={() => setHover(null)}
-                style={{
-                  transform: `translate(${x}px, ${y}px)`,
-                  transition: reduce ? "none" : `transform 900ms cubic-bezier(0.77, 0, 0.175, 1) ${(i % 40) * 6}ms, r 150ms ease`,
-                }}
-              />
-            );
-          })}
+          <style>{DOT_CSS}</style>
+          <g className={reduce ? undefined : "cf-anim"}>
+            {students.map((s) => {
+              const [x, y] = layout.pos.get(s.id) ?? [0, 0];
+              return (
+                <circle
+                  key={s.id}
+                  r={hover?.id === s.id ? 6 : 4}
+                  className={DOT_CLASS[severity(s)]}
+                  onPointerEnter={() => setHover(s)}
+                  onPointerLeave={() => setHover(null)}
+                  style={{ transform: `translate(${r1(x)}px,${r1(y)}px)` }}
+                />
+              );
+            })}
+          </g>
         </svg>
         {hover && hoverPos ? (
           <div
