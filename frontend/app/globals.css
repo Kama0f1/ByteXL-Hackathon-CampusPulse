@@ -1,0 +1,239 @@
+@import "tailwindcss";
+
+/*
+ * CampusPulse design tokens.
+ *
+ * Every colour is a CSS variable so light and dark are selected per theme, not
+ * flipped automatically. Use them through Tailwind classes: bg-surface, text-ink-2,
+ * border-line, stroke-academic, fill-risk-high...
+ *
+ * Data colours follow the validated categorical order: academic = slot 1 (blue),
+ * placement = slot 2 (orange). Risk colours are status colours: reserved for risk
+ * state and always shown with a shape and a text label.
+ */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-inverse: var(--inverse);
+  --color-on-inverse: var(--on-inverse);
+  --color-signal: var(--signal);
+
+  --color-academic: var(--academic);
+  --color-academic-soft: var(--academic-soft);
+  --color-placement: var(--placement);
+  --color-placement-soft: var(--placement-soft);
+
+  --color-risk-high: var(--risk-high);
+  --color-risk-medium: var(--risk-medium);
+  --color-risk-low: var(--risk-low);
+  --color-risk-high-soft: var(--risk-high-soft);
+  --color-risk-medium-soft: var(--risk-medium-soft);
+  --color-risk-low-soft: var(--risk-low-soft);
+  --color-risk-high-ink: var(--risk-high-ink);
+  --color-risk-medium-ink: var(--risk-medium-ink);
+  --color-risk-low-ink: var(--risk-low-ink);
+
+  --color-gridline: var(--gridline);
+  --color-baseline: var(--baseline);
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #f3f4f6;
+  --surface: #ffffff;
+  --surface-2: #f6f7f9;
+  --surface-3: #eceef2;
+  --line: rgb(16 22 35 / 0.08);
+  --line-strong: rgb(16 22 35 / 0.16);
+  --ink: #0d1117;
+  --ink-2: #4a5160;
+  --ink-3: #6f7685;
+  --inverse: #0d1117;
+  --on-inverse: #ffffff;
+  --signal: #c8f13c;
+
+  --academic: #2a78d6;
+  --academic-soft: #e6f0fc;
+  --placement: #eb6834;
+  --placement-soft: #fdeee7;
+
+  --risk-high: #d03b3b;
+  --risk-medium: #fab219;
+  --risk-low: #0ca30c;
+  --risk-high-soft: #fdecec;
+  --risk-medium-soft: #fff5de;
+  --risk-low-soft: #e7f6e7;
+  --risk-high-ink: #a32121;
+  --risk-medium-ink: #85570a;
+  --risk-low-ink: #146b14;
+
+  --gridline: #e5e7eb;
+  --baseline: #c4c8cf;
+
+  --shadow-card: 0 1px 2px rgb(16 22 35 / 0.04), 0 8px 24px -12px rgb(16 22 35 / 0.12);
+  --shadow-pop: 0 2px 6px rgb(16 22 35 / 0.06), 0 24px 48px -16px rgb(16 22 35 / 0.24);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #0a0b0d;
+  --surface: #121418;
+  --surface-2: #181b20;
+  --surface-3: #20242b;
+  --line: rgb(255 255 255 / 0.07);
+  --line-strong: rgb(255 255 255 / 0.14);
+  --ink: #f2f4f7;
+  --ink-2: #a9afba;
+  --ink-3: #7d8491;
+  --inverse: #f2f4f7;
+  --on-inverse: #0d1117;
+  --signal: #c8f13c;
+
+  --academic: #3987e5;
+  --academic-soft: rgb(57 135 229 / 0.16);
+  --placement: #d95926;
+  --placement-soft: rgb(217 89 38 / 0.18);
+
+  --risk-high: #e66767;
+  --risk-medium: #fab219;
+  --risk-low: #2fbf4a;
+  --risk-high-soft: rgb(230 103 103 / 0.16);
+  --risk-medium-soft: rgb(250 178 25 / 0.14);
+  --risk-low-soft: rgb(47 191 74 / 0.14);
+  --risk-high-ink: #ff9b9b;
+  --risk-medium-ink: #ffd27a;
+  --risk-low-ink: #86e39a;
+
+  --gridline: #23272e;
+  --baseline: #3a3f48;
+
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --shadow-pop: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 24px 48px -16px rgb(0 0 0 / 0.7);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--academic) 28%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--academic);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+.shadow-pop {
+  box-shadow: var(--shadow-pop);
+}
+
+/* Pressable elements: instant, subtle feedback. */
+.pressable {
+  transition:
+    transform 160ms var(--ease-out-strong),
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.pressable:active {
+  transform: scale(0.97);
+}
+
+/* Entrance: content rises into place once, staggered by --i. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise {
+  animation: rise 520ms var(--ease-out-strong) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+/* Landing page background texture: fine dot grid that fades out. */
+.dot-field {
+  background-image: radial-gradient(rgb(255 255 255 / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 35%, transparent 80%);
+}
+
+/* Fixed grain overlay for the landing page (pointer-events none, never on scrollers). */
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* Thin, quiet scrollbars inside panels. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* Hatched fill for "medium" cells so state never depends on colour alone. */
+.hatch {
+  background-image: repeating-linear-gradient(135deg, rgb(0 0 0 / 0.14) 0 1.5px, transparent 1.5px 5px);
+}
+[data-theme="dark"] .hatch {
+  background-image: repeating-linear-gradient(135deg, rgb(0 0 0 / 0.35) 0 1.5px, transparent 1.5px 5px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+}
