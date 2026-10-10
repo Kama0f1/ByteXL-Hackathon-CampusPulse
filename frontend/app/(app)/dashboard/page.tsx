@@ -14,9 +14,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatTile } from "@/components/ui/StatTile";
 import { formatDate, formatSigned, lowerLabel } from "@/lib/format";
+import { getAlerts } from "@/lib/alerts";
 import { getInterventionReport } from "@/lib/interventions";
 import { getCampusOverview } from "@/lib/overview";
-import { getRiskReport } from "@/lib/risks";
 
 export const metadata: Metadata = {
   title: "Overview",
@@ -25,7 +25,8 @@ export const metadata: Metadata = {
 const TONE_BAR = { strong: "bg-risk-low", mixed: "bg-academic", watch: "bg-risk-medium", support: "bg-risk-high" } as const;
 
 export default async function OverviewPage() {
-  const [{ data }, { data: risks }, { data: interventions }] = await Promise.all([getCampusOverview(), getRiskReport(), getInterventionReport()]);
+  const [{ data }, { data: interventions }, { data: alertReport }] = await Promise.all([getCampusOverview(), getInterventionReport(), getAlerts()]);
+  const newAlerts = alertReport.alerts.filter((a) => a.week === `W${alertReport.currentWeek.replace(/\D/g, "")}`);
   const unassigned = interventions.interventions.filter((i) => i.status === "suggested").length;
   const { summary } = data;
   const weeks = data.weeklyRisk.map((w) => w.week);
@@ -59,7 +60,7 @@ export default async function OverviewPage() {
         }
       />
 
-      <StartHere flagged={risks.flagged.length} newlyFlagged={risks.newlyFlagged.length} unassigned={unassigned} segments={data.segments.length} />
+      <StartHere alerts={newAlerts.length} urgent={newAlerts.filter((a) => a.severity === "high").length} unassigned={unassigned} segments={data.segments.length} />
 
       <section aria-label="Key indicators" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile

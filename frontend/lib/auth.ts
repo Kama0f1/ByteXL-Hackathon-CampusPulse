@@ -18,7 +18,7 @@ export const DEMO_ACCOUNT = {
 } as const;
 
 /** App pages that require a demo session. Keep in sync with the `(app)` route group. */
-export const PROTECTED_PATHS = ["/dashboard", "/students", "/risks", "/segments", "/interventions", "/data"];
+export const PROTECTED_PATHS = ["/dashboard", "/students", "/risks", "/segments", "/interventions", "/data", "/alerts"];
 
 export const DEFAULT_AFTER_LOGIN = "/dashboard";
 

@@ -1,22 +1,22 @@
-import { ArrowRightIcon, HandshakeIcon, UsersThreeIcon, WarningDiamondIcon } from "@phosphor-icons/react/dist/ssr";
+import { ArrowRightIcon, BellRingingIcon, HandshakeIcon, UsersThreeIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
 type StartHereProps = {
-  flagged: number;
-  newlyFlagged: number;
+  alerts: number;
+  urgent: number;
   unassigned: number;
   segments: number;
 };
 
 /** The three things a faculty member should do this week, in order. */
-export function StartHere({ flagged, newlyFlagged, unassigned, segments }: StartHereProps) {
+export function StartHere({ alerts, urgent, unassigned, segments }: StartHereProps) {
   const steps = [
     {
-      href: "/risks",
-      icon: WarningDiamondIcon,
+      href: "/alerts",
+      icon: BellRingingIcon,
       tone: "bg-risk-high-soft text-risk-high-ink",
-      title: `Review ${flagged} flagged students`,
-      body: `${newlyFlagged} were flagged for the first time this month.`,
+      title: `Read ${alerts} new alerts`,
+      body: `${urgent} are urgent: attendance, new high risk or placement.`,
     },
     {
       href: "/interventions",

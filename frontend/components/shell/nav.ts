@@ -3,9 +3,10 @@ export type NavCounts = {
   flagged: number;
   segments: number;
   openInterventions: number;
+  alertsThisWeek: number;
 };
 
-export type NavKey = "dashboard" | "students" | "risks" | "segments" | "interventions" | "data";
+export type NavKey = "dashboard" | "alerts" | "students" | "risks" | "segments" | "interventions" | "data";
 
 export type NavItem = {
   key: NavKey;
@@ -21,6 +22,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Monitor",
     items: [
       { key: "dashboard", href: "/dashboard", label: "Overview", hint: "Campus trends and who needs attention" },
+      { key: "alerts", href: "/alerts", label: "Alerts", hint: "What changed this week and who it affects", count: "alertsThisWeek" },
       { key: "risks", href: "/risks", label: "Risks", hint: "Academic and placement risk, and what drives it", count: "flagged" },
     ],
   },

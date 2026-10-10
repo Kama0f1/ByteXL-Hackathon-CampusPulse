@@ -1,5 +1,6 @@
 import { ArrowRightIcon, FileCsvIcon, UserFocusIcon } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
+import { CsvChecker } from "@/components/data/CsvChecker";
 import { DemoFootnote } from "@/components/ui/DemoBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -73,6 +74,14 @@ export default async function DataSourcesPage() {
             </dl>
           </div>
         </div>
+      </Panel>
+
+      <Panel
+        index={2}
+        title="Check your own CSV files"
+        description="Drop the exports to see which data area each one is, whether its columns are complete, and how many students join across all of them."
+      >
+        <CsvChecker />
       </Panel>
 
       <Panel

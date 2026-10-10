@@ -46,7 +46,7 @@ export function AppNav({ counts, instance, onNavigate }: AppNavProps) {
                     </span>
                     {item.count ? (
                       <span
-                        className={`tabular relative rounded-full px-1.5 py-px font-mono text-[11px] ${item.count === "flagged" ? "bg-risk-high-soft text-risk-high-ink" : "text-ink-3"}`}
+                        className={`tabular relative rounded-full px-1.5 py-px font-mono text-[11px] ${item.count === "flagged" || item.count === "alertsThisWeek" ? "bg-risk-high-soft text-risk-high-ink" : "text-ink-3"}`}
                       >
                         {counts[item.count]}
                       </span>

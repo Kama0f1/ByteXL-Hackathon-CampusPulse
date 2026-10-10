@@ -1,5 +1,6 @@
 import { SignOutIcon } from "@phosphor-icons/react/dist/ssr";
 import { signOut } from "@/app/actions/auth";
+import { AlertsBell } from "@/components/shell/AlertsBell";
 import { AppNav } from "@/components/shell/AppNav";
 import { ColourKey } from "@/components/shell/ColourKey";
 import { CommandPalette, type PaletteStudent } from "@/components/shell/CommandPalette";
@@ -10,19 +11,22 @@ import { Avatar } from "@/components/ui/Avatar";
 import { DemoBadge } from "@/components/ui/DemoBadge";
 import { Logo } from "@/components/ui/Logo";
 import { DEMO_ACCOUNT } from "@/lib/auth";
+import { getAlerts } from "@/lib/alerts";
 import { getCampusOverview } from "@/lib/overview";
 import { getRiskReport } from "@/lib/risks";
 import { getStudents } from "@/lib/students";
 
 /** Shell for signed-in app pages. Access is checked in `proxy.ts`. */
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const [{ data: overview }, { data: students }, { data: risks }] = await Promise.all([getCampusOverview(), getStudents(), getRiskReport()]);
+  const [{ data: overview }, { data: students }, { data: risks }, { data: alertReport }] = await Promise.all([getCampusOverview(), getStudents(), getRiskReport(), getAlerts()]);
+  const thisWeek = alertReport.alerts.filter((a) => a.week === `W${alertReport.currentWeek.replace(/\D/g, "")}`);
 
   const counts: NavCounts = {
     students: overview.summary.studentsTracked,
     flagged: risks.flagged.length,
     segments: overview.segments.length,
     openInterventions: overview.summary.openInterventions,
+    alertsThisWeek: thisWeek.length,
   };
 
   const toPalette = (s: (typeof students)[number]): PaletteStudent => ({
@@ -70,15 +74,18 @@ export default async function AppLayout({ children }: Readonly<{ children: React
 
       <div className="flex min-w-0 flex-col lg:py-2 lg:pr-2">
         <div className="flex min-h-dvh flex-1 flex-col bg-canvas lg:min-h-0 lg:rounded-[24px] lg:border lg:border-line lg:bg-surface-2/60">
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-canvas/80 px-4 backdrop-blur-md sm:px-6 lg:top-2 lg:rounded-t-[24px] lg:bg-surface-2/80 lg:px-8">
+          <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b sm:gap-3 border-line bg-canvas/80 px-4 backdrop-blur-md sm:px-6 lg:top-2 lg:rounded-t-[24px] lg:bg-surface-2/80 lg:px-8">
             <MobileNav counts={counts} footer={account} />
             <div className="lg:hidden">
               <Logo href="/dashboard" compact />
             </div>
-            <div className="flex flex-1 justify-center lg:justify-start">
+            <div className="flex min-w-0 flex-1 justify-center lg:justify-start">
               <CommandPalette students={students.map(toPalette)} suggested={risks.flagged.slice(0, 5).map(toPalette)} />
             </div>
-            <DemoBadge className="hidden sm:inline-flex" />
+            <span className="hidden md:block">
+              <DemoBadge />
+            </span>
+            <AlertsBell alerts={thisWeek.slice(0, 8)} total={thisWeek.length} />
             <ThemeToggle />
           </header>
           <main id="main-content" className="mx-auto w-full max-w-[1360px] flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">

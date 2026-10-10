@@ -32,5 +32,6 @@ export const config = {
     "/segments/:path*",
     "/interventions/:path*",
     "/data/:path*",
+    "/alerts/:path*",
   ],
 };

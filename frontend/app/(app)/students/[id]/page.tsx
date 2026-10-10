@@ -3,12 +3,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LineChart } from "@/components/charts/LineChart";
+import { AlertIcon } from "@/components/alerts/alertMeta";
 import { ActionCard } from "@/components/students/ActionCard";
 import { ChangeBreakdown } from "@/components/students/ChangeBreakdown";
+import { PlacementPrediction } from "@/components/students/PlacementPrediction";
 import { QueueNav } from "@/components/students/QueueNav";
 import { RiskExplainer } from "@/components/students/RiskExplainer";
 import { ScoreWaterfall } from "@/components/students/ScoreWaterfall";
 import { SignalGrid } from "@/components/students/SignalGrid";
+import { SubjectAttendance } from "@/components/students/SubjectAttendance";
 import { Avatar } from "@/components/ui/Avatar";
 import { DemoFootnote } from "@/components/ui/DemoBadge";
 import { Panel } from "@/components/ui/Panel";
@@ -101,6 +104,34 @@ export default async function StudentProfilePage({ params }: { params: Promise<{
         </Panel>
         <Panel index={3}>
           <RiskExplainer domain="placement" risk={s.placement} />
+        </Panel>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Panel index={4}>
+          <PlacementPrediction probability={s.placementProbability} semester={s.semester} mainGap={s.placement.factors[0]?.factor} />
+        </Panel>
+        <Panel index={4} title="Attendance by subject">
+          <SubjectAttendance subjects={s.subjectAttendance} overall={s.attendancePct} />
+        </Panel>
+        <Panel index={4} title={`Alerts (${s.alerts.length})`} description="Recent changes that triggered an alert.">
+          {s.alerts.length ? (
+            <ul className="space-y-3">
+              {s.alerts.map((a) => (
+                <li key={a.alertId} className="flex gap-3">
+                  <AlertIcon kind={a.kind} severity={a.severity} />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-semibold text-ink">
+                      {a.title} <span className="font-mono text-[11px] font-normal text-ink-3">{a.week}</span>
+                    </span>
+                    <span className="block text-xs leading-relaxed text-ink-3">{a.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[13px] text-ink-3">No alerts in the last four weeks.</p>
+          )}
         </Panel>
       </div>
 

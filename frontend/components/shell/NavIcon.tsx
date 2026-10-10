@@ -1,4 +1,5 @@
 import {
+  BellIcon,
   DatabaseIcon,
   HandshakeIcon,
   SquaresFourIcon,
@@ -10,6 +11,7 @@ import type { NavKey } from "@/components/shell/nav";
 
 const ICONS = {
   dashboard: SquaresFourIcon,
+  alerts: BellIcon,
   students: UserListIcon,
   risks: WarningDiamondIcon,
   segments: UsersThreeIcon,

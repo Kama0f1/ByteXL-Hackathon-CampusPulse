@@ -21,7 +21,7 @@ import { LEVEL_ORDER } from "@/lib/labels";
 import type { StudentRow } from "@/lib/types";
 
 export type RiskFilter = "all" | "any-high" | "academic-high" | "placement-high" | "both-high";
-type SortKey = "name" | "successScore" | "scoreChange" | "academicRisk" | "placementRisk" | "attendancePct" | "cgpa";
+type SortKey = "name" | "successScore" | "scoreChange" | "academicRisk" | "placementRisk" | "placementProbability" | "attendancePct" | "cgpa";
 
 const RISK_OPTIONS: { value: RiskFilter; label: string }[] = [
   { value: "all", label: "Everyone" },
@@ -112,9 +112,9 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
   }
 
   function exportCsv() {
-    const header = ["student_id", "name", "department", "semester", "mentor", "success_score", "score_change_4wk", "academic_risk", "placement_risk", "segment", "cgpa", "attendance_pct", "lms_completion_pct", "coding_score"];
+    const header = ["student_id", "name", "department", "semester", "mentor", "success_score", "score_change_4wk", "academic_risk", "placement_risk", "segment", "cgpa", "attendance_pct", "lms_completion_pct", "coding_score", "placement_probability"];
     const lines = filtered.map((r) =>
-      [r.studentId, r.name, r.department, r.semester, r.mentor, r.successScore, r.scoreChange, r.academicRisk, r.placementRisk, segmentName.get(r.segmentId) ?? r.segmentId, r.cgpa, r.attendancePct, r.lmsCompletionPct, r.codingScore]
+      [r.studentId, r.name, r.department, r.semester, r.mentor, r.successScore, r.scoreChange, r.academicRisk, r.placementRisk, segmentName.get(r.segmentId) ?? r.segmentId, r.cgpa, r.attendancePct, r.lmsCompletionPct, r.codingScore, r.placementProbability]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(","),
     );
@@ -234,7 +234,7 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
 
       <div className="rise overflow-hidden rounded-[20px] border border-line bg-surface shadow-card" style={{ "--i": 2 } as React.CSSProperties}>
         <div className="scroll-thin relative overflow-x-auto">
-          <table className="w-full min-w-[920px] text-sm">
+          <table className="w-full min-w-[1000px] text-sm">
             <thead className="border-b border-line bg-surface-2 text-xs text-ink-3">
               <tr>
                 {sortHeader("name", "Student")}
@@ -245,6 +245,7 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
                 {sortHeader("scoreChange", "4-week change", "right")}
                 {sortHeader("academicRisk", "Academic")}
                 {sortHeader("placementRisk", "Placement")}
+                {sortHeader("placementProbability", "Placement chance", "right")}
                 {sortHeader("attendancePct", "Attendance", "right")}
                 {sortHeader("cgpa", "CGPA", "right")}
                 <th scope="col" className="px-3 py-2.5 text-left font-medium">
@@ -292,6 +293,9 @@ export function StudentsExplorer({ rows, departments, segments, initialRisk = "a
                   </td>
                   <td className="px-3 py-2.5">
                     <RiskBadge level={r.placementRisk} />
+                  </td>
+                  <td className={`tabular px-3 py-2.5 text-right ${r.placementProbability < 0.4 ? "font-semibold text-risk-high-ink" : "text-ink-2"}`}>
+                    {Math.round(r.placementProbability * 100)}%
                   </td>
                   <td className={`tabular px-3 py-2.5 text-right ${r.attendancePct < 75 ? "font-semibold text-risk-high-ink" : "text-ink-2"}`}>
                     {r.attendancePct}%

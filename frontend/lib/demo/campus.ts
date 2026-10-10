@@ -1,5 +1,7 @@
 import type {
+  AlertReport,
   AttentionStudent,
+  CampusAlert,
   CampusOverview,
   CampusSignalRow,
   DataAreaKey,
@@ -233,6 +235,9 @@ type SimStudent = {
   technicalSkills: number;
   feedbackRating: number;
   lowestSubject: { name: string; pct: number };
+  subjectAttendance: { subject: string; pct: number }[];
+  attendancePctHistory: number[];
+  placementProbability: number;
   academic: ExplainedRisk;
   placement: ExplainedRisk;
   academicIndexHistory: number[];
@@ -277,6 +282,8 @@ function buildCampus() {
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
   };
   const pick = <T,>(list: T[]) => list[Math.floor(rand() * list.length)];
+  // Separate stream for subject-level detail so adding it never reshuffles the rest of the campus.
+  const subjectRand = mulberry32(7310);
 
   const usedNames = new Set<string>();
   const students: SimStudent[] = [];
@@ -326,6 +333,11 @@ function buildCampus() {
       const feedbackRating = round1(clamp(1.9 + values.feedback * 0.032, 1, 5));
       const subject = pick(dept.subjects);
       const lowestSubject = { name: subject, pct: clamp(attendancePct - 4 - Math.floor(rand() * 10), 20, 99) };
+      // Subject-wise attendance: the weakest subject is the one named above, the rest sit around the overall figure.
+      const subjectAttendance = dept.subjects.map((name) =>
+        name === subject ? { subject: name, pct: lowestSubject.pct } : { subject: name, pct: Math.round(clamp(attendancePct + 1 + subjectRand() * 7, lowestSubject.pct + 1, 99)) },
+      );
+      const attendancePctHistory = history.attendance.map((v, w) => (w === LAST ? attendancePct : Math.round(clamp(36 + v * 0.6, 35, 99))));
 
       const scoreHistory = Array.from({ length: WEEKS }, (_, w) => {
         const v = {} as AreaValues;
@@ -346,6 +358,8 @@ function buildCampus() {
 
       const aIndex = academicIndexHistory[LAST];
       const pIndex = placementIndexHistory[LAST];
+      // Stand-in for the backend placement model: probability of being placed.
+      const placementProbability = Math.round((1 / (1 + Math.exp((pIndex - 54) / 7))) * 100) / 100;
 
       const academic: ExplainedRisk = {
         level: levelFor(aIndex),
@@ -406,6 +420,7 @@ function buildCampus() {
           attendancePct,
           lmsCompletionPct,
           codingScore,
+          placementProbability,
         },
         email: `${first}.${last}@campus.demo`,
         segment,
@@ -423,6 +438,9 @@ function buildCampus() {
         technicalSkills,
         feedbackRating,
         lowestSubject,
+        subjectAttendance,
+        attendancePctHistory,
+        placementProbability,
         academic,
         placement,
         academicIndexHistory,
@@ -494,6 +512,108 @@ function attentionQueue() {
       const pb = levelRank[b.academic.level] + levelRank[b.placement.level];
       return pb - pa || a.row.successScore - b.row.successScore;
     });
+}
+
+const ACADEMIC_AREAS: DataAreaKey[] = ["academics", "attendance", "lms"];
+
+/**
+ * Early-warning alerts: rules that fire when something changes, so faculty hear about
+ * it the week it happens. The backend will own these rules; this mirrors them.
+ */
+function alertsFor(s: SimStudent): CampusAlert[] {
+  const out: CampusAlert[] = [];
+  const base = { studentId: s.row.studentId, studentName: s.row.name, department: s.row.department };
+  const recent = Array.from({ length: LOOKBACK }, (_, i) => LAST - LOOKBACK + 1 + i);
+
+  const attWeek = recent.find((w) => s.attendancePctHistory[w - 1] >= 75 && s.attendancePctHistory[w] < 75);
+  if (attWeek !== undefined) {
+    out.push({
+      ...base,
+      alertId: `${s.row.studentId}-att`,
+      kind: "attendance-threshold",
+      severity: "high",
+      domain: "academic",
+      title: "Attendance fell below 75%",
+      detail: `${s.attendancePctHistory[attWeek - 1]}% to ${s.row.attendancePct}%. Lowest in ${s.lowestSubject.name} at ${s.lowestSubject.pct}%; below 75% blocks exam eligibility.`,
+      week: `W${attWeek + 1}`,
+    });
+  }
+
+  for (const [domain, risk, history] of [
+    ["academic", s.academic, s.academicIndexHistory],
+    ["placement", s.placement, s.placementIndexHistory],
+  ] as const) {
+    if (risk.level !== "high") continue;
+    const w = recent.find((x) => history[x - 1] < RISK_HIGH && history[x] >= RISK_HIGH);
+    if (w === undefined) continue;
+    const lead = risk.factors[0];
+    out.push({
+      ...base,
+      alertId: `${s.row.studentId}-${domain}-high`,
+      kind: "new-high-risk",
+      severity: "high",
+      domain,
+      title: `Now high ${domain} risk`,
+      detail: lead ? `${lead.factor} explains ${Math.round(lead.share * 100)}%: ${lead.evidence}.` : "Several small gaps combined.",
+      week: `W${w + 1}`,
+    });
+  }
+
+  const drop = s.row.scoreChange;
+  if (drop <= -5) {
+    const worst = s.scoreChangeFactors.find((f) => f.points < 0);
+    out.push({
+      ...base,
+      alertId: `${s.row.studentId}-drop`,
+      kind: "score-drop",
+      severity: drop <= -8 ? "high" : "medium",
+      domain: worst && !ACADEMIC_AREAS.includes(worst.key) ? "placement" : "academic",
+      title: `Success score down ${Math.abs(drop)} points in 4 weeks`,
+      detail: worst ? `Mostly from ${worst.label} (${Math.round(worst.share * 100)}% of the drop).` : "Spread across several areas.",
+      week: `W${LAST + 1}`,
+    });
+  }
+
+  if (s.history.lms[LAST - LOOKBACK] - s.history.lms[LAST] >= 15) {
+    out.push({
+      ...base,
+      alertId: `${s.row.studentId}-lms`,
+      kind: "lms-drop",
+      severity: "medium",
+      domain: "academic",
+      title: "LMS activity dropped sharply",
+      detail: `${s.row.lmsCompletionPct}% of assignments submitted, ${s.lmsLogins} logins a week.`,
+      week: `W${LAST + 1}`,
+    });
+  }
+
+  if (s.row.semester >= 7 && s.placementProbability < 0.25) {
+    out.push({
+      ...base,
+      alertId: `${s.row.studentId}-placement`,
+      kind: "placement-prediction",
+      severity: "high",
+      domain: "placement",
+      title: "Predicted to miss placement",
+      detail: `${Math.round(s.placementProbability * 100)}% chance of being placed. Main gap: ${s.placement.factors[0]?.factor.toLowerCase() ?? "placement tests"}.`,
+      week: `W${LAST + 1}`,
+    });
+  }
+
+  return out;
+}
+
+let alertCache: CampusAlert[] | null = null;
+function allAlerts() {
+  const rank = { high: 0, medium: 1, low: 2 };
+  alertCache ??= campus()
+    .flatMap(alertsFor)
+    .sort((a, b) => Number(b.week.slice(1)) - Number(a.week.slice(1)) || rank[a.severity] - rank[b.severity]);
+  return alertCache;
+}
+
+export function getDemoAlerts(): AlertReport {
+  return { generatedAt: DEMO_GENERATED_AT, currentWeek: DEMO_WEEK, alerts: allAlerts() };
 }
 
 function toAttention(s: SimStudent): AttentionStudent {
@@ -690,6 +810,8 @@ export function getDemoProfile(studentId: string): StudentProfile | null {
     scoreChangeFactors: s.scoreChangeFactors,
     suggestedAction: s.suggestedAction,
     interventions: s.interventions,
+    subjectAttendance: s.subjectAttendance,
+    alerts: allAlerts().filter((a) => a.studentId === s.row.studentId),
     previousFlaggedId: at > 0 ? queue[at - 1].row.studentId : null,
     nextFlaggedId: at >= 0 && at < queue.length - 1 ? queue[at + 1].row.studentId : at < 0 && queue.length ? queue[0].row.studentId : null,
   };
@@ -802,13 +924,13 @@ export function getDemoPipeline(): PipelineReport {
     generatedAt: DEMO_GENERATED_AT,
     studentsUnified: n,
     sources: [
-      { key: "academics", label: "Academics", file: "Academic.csv", fields: ["student_id", "cgpa", "internal_marks", "backlogs", "semester"], rows: n * 6, matchedStudents: n, missingValues: 14, duplicatesRemoved: 3, refreshed: "2026-10-09" },
-      { key: "attendance", label: "Attendance", file: "Attendance.csv", fields: ["student_id", "week", "subject", "classes_held", "classes_attended"], rows: n * WEEKS * 4, matchedStudents: n, missingValues: 212, duplicatesRemoved: 41, refreshed: "2026-10-10" },
-      { key: "lms", label: "LMS activity", file: "LMS.csv", fields: ["student_id", "week", "logins", "assignments_due", "assignments_submitted"], rows: n * WEEKS * 3, matchedStudents: 637, missingValues: 96, duplicatesRemoved: 18, refreshed: "2026-10-10" },
-      { key: "engagement", label: "Engagement", file: "Engagement.csv", fields: ["student_id", "activity_type", "activity_name", "date", "role"], rows: 2115, matchedStudents: 588, missingValues: 7, duplicatesRemoved: 22, refreshed: "2026-10-08" },
-      { key: "placement", label: "Placement readiness", file: "Placement.csv", fields: ["student_id", "aptitude_score", "coding_score", "mock_interviews"], rows: n * 3, matchedStudents: 626, missingValues: 31, duplicatesRemoved: 0, refreshed: "2026-10-07" },
-      { key: "skills", label: "Skills", file: "Skills.csv", fields: ["student_id", "skill", "level", "verified_by"], rows: 3204, matchedStudents: 619, missingValues: 12, duplicatesRemoved: 9, refreshed: "2026-10-06" },
-      { key: "feedback", label: "Feedback", file: "Feedback.csv", fields: ["student_id", "source", "rating", "comment_sentiment"], rows: 1190, matchedStudents: 571, missingValues: 18, duplicatesRemoved: 4, refreshed: "2026-10-09" },
+      { key: "academics", label: "Academics", file: "Academic.csv", fields: ["student_id", "cgpa", "backlogs", "semester"], rows: n * 6, matchedStudents: n, missingValues: 14, duplicatesRemoved: 3, refreshed: "2026-10-09" },
+      { key: "attendance", label: "Attendance", file: "Attendance.csv", fields: ["student_id", "attendance_pct", "classes_attended"], rows: n * WEEKS * 4, matchedStudents: n, missingValues: 212, duplicatesRemoved: 41, refreshed: "2026-10-10" },
+      { key: "lms", label: "LMS activity", file: "LMS.csv", fields: ["student_id", "assignment_completion_pct", "lms_logins_30d", "quiz_avg"], rows: n * WEEKS * 3, matchedStudents: 637, missingValues: 96, duplicatesRemoved: 18, refreshed: "2026-10-10" },
+      { key: "engagement", label: "Engagement", file: "Engagement.csv", fields: ["student_id", "clubs_participation_count", "events_attended_count"], rows: 2115, matchedStudents: 588, missingValues: 7, duplicatesRemoved: 22, refreshed: "2026-10-08" },
+      { key: "placement", label: "Placement readiness", file: "Placement.csv", fields: ["student_id", "aptitude_score", "coding_score", "mock_interview_score", "placement_outcome"], rows: n * 3, matchedStudents: 626, missingValues: 31, duplicatesRemoved: 0, refreshed: "2026-10-07" },
+      { key: "skills", label: "Skills", file: "Skills.csv", fields: ["student_id", "technical_skill_score", "communication_score", "projects_count", "certifications_count"], rows: 3204, matchedStudents: 619, missingValues: 12, duplicatesRemoved: 9, refreshed: "2026-10-06" },
+      { key: "feedback", label: "Feedback", file: "Feedback.csv", fields: ["student_id", "satisfaction_score", "support_need_category"], rows: 1190, matchedStudents: 571, missingValues: 18, duplicatesRemoved: 4, refreshed: "2026-10-09" },
     ],
     steps: [
       { title: "Ingest", detail: "Seven CSV exports are loaded and their column names mapped to one schema." },

@@ -22,6 +22,7 @@ export const metadata: Metadata = {
 export default async function RisksPage() {
   const [{ data: report }, { data: rows }] = await Promise.all([getRiskReport(), getStudents()]);
   const weeks = report.weeklyRisk.map((w) => w.week);
+  const predicted = rows.filter((r) => r.semester >= 7 && r.placementProbability < 0.4).sort((a, b) => a.placementProbability - b.placementProbability);
 
   return (
     <div className="space-y-6">
@@ -104,6 +105,37 @@ export default async function RisksPage() {
           <DepartmentRiskChart departments={report.departmentRisk} />
         </Panel>
       </div>
+
+      <Panel
+        index={6}
+        title={`Final-years predicted to miss placement (${predicted.length})`}
+        description="Semester 7 students the placement model gives under a 40% chance. Placement season is now, so these come first."
+        action={
+          <Link href="/students?risk=placement-high" className="inline-flex items-center gap-1 text-[13px] font-medium text-ink-2 hover:text-ink">
+            Placement high <ArrowRightIcon aria-hidden="true" className="h-3.5 w-3.5" />
+          </Link>
+        }
+      >
+        <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {predicted.slice(0, 12).map((r) => (
+            <li key={r.studentId}>
+              <Link href={`/students/${r.studentId}`} className="pressable flex items-center gap-3 rounded-2xl border border-line bg-surface-2 p-3 hover:border-line-strong hover:bg-surface">
+                <Avatar name={r.name} size="sm" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold text-ink">{r.name}</span>
+                  <span className="block truncate text-[11px] text-ink-3">
+                    {r.department}, coding {r.codingScore}/100
+                  </span>
+                </span>
+                <span className="text-right">
+                  <span className="tabular block text-sm font-semibold text-risk-high-ink">{Math.round(r.placementProbability * 100)}%</span>
+                  <span className="block text-[10px] text-ink-3">chance</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </Panel>
 
       <DemoFootnote endpoint="GET /api/risks" />
     </div>

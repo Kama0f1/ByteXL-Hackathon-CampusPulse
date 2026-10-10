@@ -157,6 +157,8 @@ export type StudentRow = {
   attendancePct: number;
   lmsCompletionPct: number;
   codingScore: number;
+  /** Predicted probability of being placed, 0–1, from the backend placement model. */
+  placementProbability: number;
 };
 
 /** One data area's standing for a student, with weekly history. */
@@ -224,9 +226,39 @@ export type StudentProfile = StudentRow & {
   scoreChangeFactors: ScoreChangeFactor[];
   suggestedAction: SuggestedAction & { reason: string };
   interventions: StudentIntervention[];
+  /** Attendance per subject this term (the brief asks for overall and subject-wise). */
+  subjectAttendance: { subject: string; pct: number }[];
+  alerts: CampusAlert[];
   /** Neighbouring students in the attention queue, for quick navigation. */
   previousFlaggedId: string | null;
   nextFlaggedId: string | null;
+};
+
+/* ------------------------------------------------------------------ */
+/* Alerts                                                              */
+/* ------------------------------------------------------------------ */
+
+export type AlertKind = "attendance-threshold" | "new-high-risk" | "score-drop" | "lms-drop" | "placement-prediction";
+
+/** Something changed that faculty should act on. Proposed endpoint: GET /api/alerts. */
+export type CampusAlert = {
+  alertId: string;
+  studentId: string;
+  studentName: string;
+  department: string;
+  kind: AlertKind;
+  severity: Exclude<RiskLevel, "low">;
+  domain: RiskDomain;
+  title: string;
+  detail: string;
+  /** Teaching week the alert fired, e.g. "W12". */
+  week: string;
+};
+
+export type AlertReport = {
+  generatedAt: string;
+  currentWeek: string;
+  alerts: CampusAlert[];
 };
 
 /* ------------------------------------------------------------------ */
