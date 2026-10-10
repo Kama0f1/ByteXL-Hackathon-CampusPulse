@@ -92,14 +92,19 @@ class PlanUpdate(BaseModel):
     planned: bool = True
 
 class PredictRequest(BaseModel):
-    """Features of the saved placement model. Anything left out is treated as 0 by the model code."""
+    """Model features plus optional score dimensions; omitted dimensions report reduced coverage."""
     cgpa: float = Field(ge=0, le=10)
     backlogs: int = Field(default=0, ge=0)
     attendance_pct: float = Field(ge=0, le=100)
-    assignment_completion_pct: float = Field(default=0, ge=0, le=100)
-    quiz_avg: float = Field(default=0, ge=0, le=100)
+    assignment_completion_pct: float | None = Field(default=None, ge=0, le=100)
+    quiz_avg: float | None = Field(default=None, ge=0, le=100)
     technical_skill_score: float = Field(ge=0, le=100)
-    communication_score: float = Field(default=0, ge=0, le=100)
+    communication_score: float | None = Field(default=None, ge=0, le=100)
+    aptitude_score: float | None = Field(default=None, ge=0, le=100)
+    coding_score: float | None = Field(default=None, ge=0, le=100)
+    clubs_participation_count: int | None = Field(default=None, ge=0, le=50)
+    events_attended_count: int | None = Field(default=None, ge=0, le=200)
+    satisfaction_score: float | None = Field(default=None, ge=0, le=10)
 
 # --------------------------------------------------------------------------- #
 # routes
@@ -173,15 +178,10 @@ def update_intervention(intervention_id: str, body: InterventionStatusUpdate):
     # the id itself, never from a list position that shifts as other cards are assigned.
     if intervention_id.startswith("SUG-"):
         student_id = intervention_id[len("SUG-"):]
-        existing = [i for i in campus_service.get_interventions()["interventions"]
-                    if i["studentId"] == student_id and not i["interventionId"].startswith("SUG-")]
-        if existing:  # already assigned (e.g. from another tab): move that one instead of duplicating
-            intervention_id = existing[-1]["interventionId"]
-        else:
-            item = campus_service.create_intervention(student_id, None, None, None, body.status)
-            if item is None:
-                raise HTTPException(status_code=404, detail=f"Student {student_id} not found")
-            return {"interventionId": item["interventionId"], "status": item["status"]}
+        item = campus_service.assign_suggested_intervention(student_id, body.status)
+        if item is None:
+            raise HTTPException(status_code=404, detail=f"Student {student_id} not found")
+        return {"interventionId": item["interventionId"], "status": item["status"]}
     if not campus_service.update_intervention_status(intervention_id, body.status):
         raise HTTPException(status_code=404, detail=f"Intervention {intervention_id} not found")
     return {"interventionId": intervention_id, "status": body.status}
@@ -195,7 +195,7 @@ def predict(body: PredictRequest):
     from prediction import predict_placement  # imported lazily: loads the joblib model
 
     try:
-        result = predict_placement(body.model_dump())
+        result = predict_placement(body.model_dump(exclude_none=True))
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Prediction failed: {exc}")
     if "error" in result:

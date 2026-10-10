@@ -13,7 +13,7 @@ const STEPS = ["opacity-100", "opacity-70", "opacity-45", "opacity-25"];
 
 function sentence(risk: ExplainedRisk, domain: RiskDomain) {
   if (risk.factors.length === 0) return `No factor is pulling ${domain} readiness down right now.`;
-  const parts = risk.factors.slice(0, 3).map((f) => `${formatPercent(f.share)} from ${lowerLabel(f.factor)}`);
+  const parts = risk.factors.map((f) => `${formatPercent(f.share)} from ${lowerLabel(f.factor)}`);
   const list = parts.length === 1 ? `all from ${lowerLabel(risk.factors[0].factor)}` : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
   return risk.level === "low" ? `Not flagged. The small gaps that remain: ${list}.` : `This risk comes ${list}.`;
 }
@@ -43,6 +43,7 @@ export function RiskExplainer({ domain, risk }: { domain: RiskDomain; risk: Expl
       </div>
 
       <p className="mt-4 text-[13px] leading-relaxed text-ink-2">{sentence(risk, domain)}</p>
+      <p className="mt-1 text-xs text-ink-3">All contributing factors are included. Displayed percentages are rounded.</p>
 
       {risk.factors.length ? (
         <>

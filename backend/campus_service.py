@@ -22,9 +22,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import random
 import re
 import threading
+import tempfile
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -42,7 +44,7 @@ from data_loader import load_and_clean_data
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR.parent / "data"
-STORE_PATH = BASE_DIR / "interventions_store.json"
+STORE_PATH = Path(os.getenv("CAMPUS_STORE_PATH", str(BASE_DIR / "interventions_store.json")))
 
 TERM = "Odd semester 2026-27"
 WEEKS = 12
@@ -262,9 +264,9 @@ def _insights(df: pd.DataFrame, students: list["Student"]) -> tuple[list[dict[st
         near = int(((avg < bar) & (avg >= bar - 10)).sum())
         insights.append({
             "id": "placement-bar", "domain": "placement", "metric": f"{bar}+",
-            "title": f"Every placed student averages {bar}+ on coding and aptitude",
+            "title": f"Placed students with recorded coding scores average {bar}+",
             "detail": f"All {int(raw_placed.sum())} placed students with a recorded coding score clear it, and none of the {int((~raw_placed).sum())} below it were placed. "
-                      f"{near} students are within 10 points of the line: the quickest placement wins.",
+                      f"{near} students are within 10 points of this observed line. This is an association in this dataset, not a recruiter eligibility rule.",
         })
 
     # 2. The 75% attendance rule against grades.
@@ -290,8 +292,8 @@ def _insights(df: pd.DataFrame, students: list["Student"]) -> tuple[list[dict[st
     # 4. Attendance and LMS work move together.
     insights.append({
         "id": "attendance-lms", "domain": "academic", "metric": f"r = {_corr(df['attendance_pct'], df['assignment_completion_pct']):.2f}",
-        "title": "Students who stop attending also stop submitting LMS work",
-        "detail": "Attendance and assignment completion move together, so one mentor call usually covers both problems.",
+        "title": "Lower attendance is associated with lower assignment completion",
+        "detail": "These measures move together in this snapshot. A mentor can investigate both; the data does not establish causes or intervention outcomes.",
     })
 
     # 5. Feedback joined with risk: who asked for help and is already flagged.
@@ -321,9 +323,14 @@ def _insights(df: pd.DataFrame, students: list["Student"]) -> tuple[list[dict[st
     for a, b in (("coding_score", "technical_skill_score"), ("mock_interview_score", "communication_score")):
         both = raw_both.dropna(subset=[a, b])
         if len(both) and np.isclose(both[a], both[b]).mean() > 0.95:
-            findings.append(f"{b} (Skills.csv) is identical to {a} (Placement.csv) for every student who has both, so they are one measurement, not two.")
+            findings.append(f"{b} (Skills.csv) matches {a} (Placement.csv) in over 95% of complete records. The current score and clustering use both, so this overlap can amplify the same measurement.")
     findings.append(f"All {len(df)} student IDs appear exactly once in each of the seven files: no duplicates and no orphan records.")
-    findings.append("254 missing scores (118 quiz averages, 62 coding scores, 74 communication scores) are filled with the column mean.")
+    missing = []
+    for filename, column in (("LMS.csv", "quiz_avg"), ("Placement.csv", "coding_score"), ("Skills.csv", "communication_score")):
+        values = pd.read_csv(DATA_DIR / filename, keep_default_na=False)[column]
+        count = int(values.astype(str).str.strip().str.lower().isin(["", "nan", "null"]).sum())
+        missing.append((column, count))
+    findings.append(f"{sum(count for _, count in missing)} missing scores are filled with the column mean: " + ", ".join(f"{column}: {count}" for column, count in missing) + ".")
     findings.append("A blank support-need answer in Feedback.csv means no support was requested, so it is recorded as None, not as missing.")
     return insights, findings
 
@@ -541,7 +548,7 @@ def get_campus() -> Campus:
         p_level = risk_engine.level(p_now, PLACEMENT_HIGH, PLACEMENT_MEDIUM)
 
         avg_ca = (coding + apt) / 2
-        bar_note = f"; average {avg_ca:.0f}, every placed student is 70+" if avg_ca < 70 else ""
+        bar_note = f"; average {avg_ca:.0f}, readiness target 75+ (a configurable demo policy)" if avg_ca < 75 else ""
         a_factors = risk_engine.explain(a_points(LAST), {
             "Internal marks and CGPA": f"CGPA {r['cgpa']:.2f} (7.5+ is on track)",
             "Attendance": f"{att:.0f}% attendance (75% needed to sit exams)",
@@ -593,8 +600,8 @@ def get_campus() -> Campus:
             clubs=int(r["clubs_participation_count"]), events=int(r["events_attended_count"]),
             lms_logins=logins, projects=int(r["projects_count"]), certs=int(r["certifications_count"]),
             support_need=str(r["support_need_category"]), placed_prob=prob,
-            academic={"level": a_level, "index": int(round(a_now)), "factors": a_factors},
-            placement={"level": p_level, "index": int(round(p_now)), "factors": p_factors},
+            academic={"level": a_level, "index": a_now, "factors": a_factors},
+            placement={"level": p_level, "index": p_now, "factors": p_factors},
             a_hist=a_hist, p_hist=p_hist, change_factors=change_factors,
             classes_attended=int(r["classes_attended"]),
         )
@@ -748,13 +755,13 @@ def get_alerts() -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # intervention store (user-created items + status changes survive restarts)
 # --------------------------------------------------------------------------- #
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 
 def _load_store() -> dict[str, Any]:
     try:
-        return json.loads(STORE_PATH.read_text())
-    except (FileNotFoundError, json.JSONDecodeError):
+        return json.loads(STORE_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         return {"created": [], "status": {}, "handledAlerts": [], "groupPlans": {}}
 
 
@@ -788,7 +795,19 @@ def set_group_plan(segment_id: str, planned: bool) -> bool:
 
 
 def _save_store(store: dict[str, Any]) -> None:
-    STORE_PATH.write_text(json.dumps(store, indent=2))
+    # Replace in the same directory so readers never see a partially written file.
+    STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    name = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=STORE_PATH.parent, delete=False) as handle:
+            name = handle.name
+            json.dump(store, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(name, STORE_PATH)
+    finally:
+        if name and os.path.exists(name):
+            os.unlink(name)
 
 
 VALID_STATUS = {"suggested", "assigned", "in-progress", "completed"}
@@ -800,6 +819,12 @@ def create_intervention(student_id: str, label: str | None, domain: str | None, 
         return None
     with _lock:
         store = _load_store()
+        # Retrying a default follow-up must reuse the existing open action.
+        for existing in store["created"]:
+            existing_status = store["status"].get(existing["interventionId"], existing["status"])
+            if (existing["studentId"] == student_id and existing["label"] == (label or s.action["label"])
+                    and existing["domain"] == (domain or s.action["domain"]) and existing_status != "completed"):
+                return {**existing, "status": existing_status}
         seq = 1000 + len(store["created"]) + 1
         item = {
             "interventionId": f"INT-{seq}", "studentId": student_id,
@@ -810,6 +835,19 @@ def create_intervention(student_id: str, label: str | None, domain: str | None, 
         store["created"].append(item)
         _save_store(store)
     return item
+
+
+def assign_suggested_intervention(student_id: str, status: str) -> dict[str, Any] | None:
+    """Look up and assign under one lock, including simultaneous retries from other tabs."""
+    with _lock:
+        existing = [i for i in get_interventions()["interventions"]
+                    if i["studentId"] == student_id and not i["interventionId"].startswith("SUG-")]
+        if existing:
+            intervention_id = existing[-1]["interventionId"]
+            if update_intervention_status(intervention_id, status):
+                return {"interventionId": intervention_id, "status": status}
+            return None
+        return create_intervention(student_id, None, None, None, status)
 
 
 def update_intervention_status(intervention_id: str, status: str) -> bool:

@@ -27,6 +27,8 @@ const RANGES: Record<string, [number, number]> = {
   satisfaction_score: [0, 10],
 };
 const OUTCOMES = new Set(["placed", "not placed"]);
+const IMPUTABLE = new Set(["quiz_avg", "coding_score", "communication_score"]);
+const COUNTS = new Set(["backlogs", "semester", "classes_attended", "lms_logins_30d", "clubs_participation_count", "events_attended_count", "projects_count", "certifications_count"]);
 
 type Checked = {
   file: string;
@@ -65,7 +67,7 @@ function check(file: string, text: string): Checked {
   if (lines.length < 2) return { ...empty, error: "The file has no data rows." };
 
   const columns = splitLine(lines[0]).map((c) => c.toLowerCase());
-  const idIndex = columns.findIndex((c) => c === "student_id" || c === "id");
+  const idIndex = columns.indexOf("student_id");
   if (idIndex < 0) return { ...empty, columns, error: "No student_id column, so it cannot be joined to the other sources." };
 
   const scored = AREAS.map((a) => ({ a, hits: a.columns.filter((c) => columns.includes(c)).length })).sort((x, y) => y.hits - x.hits);
@@ -76,6 +78,7 @@ function check(file: string, text: string): Checked {
   let emptyCells = 0;
   let blankIds = 0;
   let badValues = 0;
+  const blankCounts: Record<string, number> = {};
   const examples: string[] = [];
   for (const [n, line] of lines.slice(1).entries()) {
     const cells = splitLine(line);
@@ -90,11 +93,12 @@ function check(file: string, text: string): Checked {
       const v = cells[i];
       if (isBlank(v)) {
         if (i !== idIndex) emptyCells += 1;
+        blankCounts[col] = (blankCounts[col] ?? 0) + 1;
         return;
       }
       const range = RANGES[col];
       const bad = range
-        ? !(Number.isFinite(Number(v)) && Number(v) >= range[0] && Number(v) <= range[1])
+        ? !(Number.isFinite(Number(v)) && Number(v) >= range[0] && Number(v) <= range[1] && (!COUNTS.has(col) || Number.isInteger(Number(v))))
         : col === "placement_outcome" && !OUTCOMES.has(v.toLowerCase());
       if (bad) {
         badValues += 1;
@@ -109,6 +113,8 @@ function check(file: string, text: string): Checked {
     duplicateIds ? `${duplicateIds} duplicate student_id${duplicateIds === 1 ? "" : "s"}` : "",
     badValues ? `${badValues} invalid value${badValues === 1 ? "" : "s"}, e.g. ${examples.join(", ")}` : "",
     missingColumns.length ? `missing column${missingColumns.length === 1 ? "" : "s"}: ${missingColumns.join(", ")}` : "",
+    ...Object.entries(blankCounts).filter(([col, count]) => col !== "student_id" && col !== "support_need_category" && (!IMPUTABLE.has(col) || count === lines.length - 1)).map(([col, count]) => `${count} missing ${col} value${count === 1 ? "" : "s"} cannot be filled`),
+    new Set(columns).size !== columns.length ? "duplicate column names" : "",
   ].filter(Boolean);
 
   return {
@@ -255,8 +261,10 @@ export function CsvChecker() {
             <p className="text-xs font-medium text-risk-medium-ink">
               All seven data areas are present, but {withProblems.length} file{withProblems.length === 1 ? " needs" : "s need"} fixing before they can be loaded.
             </p>
-          ) : inAll === 0 ? (
-            <p className="text-xs font-medium text-risk-medium-ink">All seven data areas are present, but no student appears in every file, so nothing joins.</p>
+          ) : valid.length !== 7 ? (
+            <p className="text-xs font-medium text-risk-medium-ink">Choose exactly one file for each of the seven data areas.</p>
+          ) : inAll !== union.size ? (
+            <p className="text-xs font-medium text-risk-medium-ink">Student IDs must match across all seven files. {union.size - inAll} students have an incomplete record.</p>
           ) : (
             <p className="text-xs font-medium text-risk-low-ink">
               All seven data areas present and valid; {inAll.toLocaleString("en-IN")} students join on student_id.

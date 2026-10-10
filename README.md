@@ -42,3 +42,7 @@ Real, from the CSVs: every score, CGPA, attendance, LMS, placement, skills, enga
 Simulated, because the provided data is anonymised and is a single snapshot: student names, emails, departments and mentors; the split of attendance by subject (it always adds up to the real total); the 12-week history behind the trend charts; and the starter set of past interventions. Every page footnote says this.
 
 Interventions, handled alerts and planned group sessions are saved to `backend/interventions_store.json` (git-ignored). After replacing a CSV in `data/`, call `POST /api/refresh` to rescore.
+
+On Railway, `CAMPUS_STORE_PATH` points to `/campus-store/interventions_store.json` on an attached volume, preserving saved actions across deployments. Both services deploy from GitHub `main`; see [deployment settings and checks](docs/RAILWAY_DEPLOYMENT.md).
+
+Run backend regression checks with `python -m unittest discover -s backend -p 'test_*.py' -v`, and frontend checks with `npm --prefix frontend run lint` and `npm --prefix frontend run build`.

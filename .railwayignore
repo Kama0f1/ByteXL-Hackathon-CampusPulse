@@ -1,0 +1,14 @@
+.git/
+.claude/
+.vscode/
+.railway/
+node_modules/
+.next/
+.venv/
+__pycache__/
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+backend/interventions_store.json

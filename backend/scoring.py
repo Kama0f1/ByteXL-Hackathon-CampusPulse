@@ -6,13 +6,13 @@ def calculate_student_success_score(row):
     Adjusts weights dynamically if data is missing.
     """
     dimensions = {
-        'academic': (row.get('cgpa', 0) / 10.0 * 100, 25),
-        'attendance': (row.get('attendance_pct', 0), 20),
-        'lms': (row.get('assignment_completion_pct', 0), 15),
-        'placement': ((row.get('aptitude_score', 0) + row.get('coding_score', 0)) / 2.0, 20),
-        'skills': (row.get('technical_skill_score', 0), 10),
-        'engagement': (min(100, (row.get('clubs_participation_count', 0) + row.get('events_attended_count', 0)) * 10), 5),
-        'feedback': (row.get('satisfaction_score', 0) / 10.0 * 100, 5)
+        'academic': (row.get('cgpa', float('nan')) / 10.0 * 100, 25),
+        'attendance': (row.get('attendance_pct', float('nan')), 20),
+        'lms': (row.get('assignment_completion_pct', float('nan')), 15),
+        'placement': ((row.get('aptitude_score', float('nan')) + row.get('coding_score', float('nan'))) / 2.0, 20),
+        'skills': (row.get('technical_skill_score', float('nan')), 10),
+        'engagement': ((row.get('clubs_participation_count', float('nan')) + row.get('events_attended_count', float('nan'))) * 10, 5),
+        'feedback': (row.get('satisfaction_score', float('nan')) / 10.0 * 100, 5)
     }
     
     total_score = 0
@@ -20,7 +20,7 @@ def calculate_student_success_score(row):
     
     for dim, (score, weight) in dimensions.items():
         if pd.notna(score):
-            total_score += score * (weight / 100.0)
+            total_score += min(100, max(0, score)) * (weight / 100.0)
             total_weight_used += weight
             
     if total_weight_used == 0:

@@ -1,0 +1,11 @@
+.git/
+.claude/
+.vscode/
+.railway/
+node_modules/
+.next/
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo

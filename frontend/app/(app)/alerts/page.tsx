@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AlertFeed } from "@/components/alerts/AlertFeed";
-import { DemoFootnote } from "@/components/ui/DemoBadge";
+import { DemoFootnote, SimulatedTag } from "@/components/ui/DemoBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
@@ -26,6 +26,7 @@ export default async function AlertsPage() {
           </>
         }
       />
+      <p className="flex flex-wrap items-center gap-2 text-xs text-ink-3"><SimulatedTag /> Attendance crossings and new-risk alerts use generated weekly records. Placement alerts use the current snapshot and model.</p>
       <Panel
         index={1}
         title={

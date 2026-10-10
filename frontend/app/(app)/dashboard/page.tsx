@@ -70,6 +70,7 @@ export default async function OverviewPage() {
         }
       />
 
+      <p className="flex flex-wrap items-center gap-2 text-xs text-ink-3"><SimulatedTag /> Weekly comparisons, sparklines and change alerts use generated history. Current scores use the supplied records.</p>
       <StartHere alerts={newAlerts.length} urgent={newAlerts.filter((a) => a.severity === "high").length} unassigned={unassigned} segments={data.segments.length} />
 
       <section aria-label="Key indicators" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

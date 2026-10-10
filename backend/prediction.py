@@ -1,6 +1,7 @@
 import joblib
 import pandas as pd
 import os
+from scoring import calculate_student_success_score
 
 # Locate the model file in the same directory as this script
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'placement_model.joblib')
@@ -21,13 +22,7 @@ def predict_placement(student_data):
         return {"error": "Model not loaded"}
         
     # --- 1. CALCULATE THE STUDENT SUCCESS SCORE ---
-    normalized_cgpa = (student_data.get('cgpa', 0) / 10.0) * 100
-    
-    success_score = (
-        (normalized_cgpa * 0.40) + 
-        (student_data.get('technical_skill_score', 0) * 0.40) + 
-        (student_data.get('attendance_pct', 0) * 0.20)
-    )
+    success_score, score_coverage = calculate_student_success_score(student_data)
     
     # --- 2. GENERATE RISK FLAGS ---
     risk_flags = []
@@ -76,6 +71,7 @@ def predict_placement(student_data):
     # --- 6. RETURN COMBINED RESULTS ---
     return {
         "success_score": float(round(success_score, 1)),
+        "score_weight_coverage_pct": score_coverage,
         "segment": segment,  # NEW: Added for the frontend dashboard!
         "risk_flags": risk_flags,
         "prediction": "Placed" if prediction == 1 else "Not Placed",

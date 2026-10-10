@@ -1,0 +1,9 @@
+# Railway installs dependencies before copying backend/, so keep this standalone.
+# Match backend/requirements.txt, pinned to the locally verified package versions.
+fastapi==0.135.2
+uvicorn==0.42.0
+pandas==3.0.1
+numpy==2.2.6
+scikit-learn==1.6.1
+joblib==1.5.3
+python-dotenv==1.0.0
