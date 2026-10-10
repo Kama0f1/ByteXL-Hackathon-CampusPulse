@@ -55,10 +55,10 @@ def predict_placement(student_data):
     prediction = placement_model.predict(df)[0]
     probability = placement_model.predict_proba(df)[0]
     
-    # --- 5. RETURN COMBINED RESULTS ---
+    # --- 5. RETURN COMBINED RESULTS (API SAFE) ---
     return {
-        "success_score": round(success_score, 1),
+        "success_score": float(round(success_score, 1)),
         "risk_flags": risk_flags,
         "prediction": "Placed" if prediction == 1 else "Not Placed",
-        "confidence_placed_pct": round(probability[1] * 100, 2)
+        "confidence_placed_pct": float(round(probability[1] * 100, 2))
     }
