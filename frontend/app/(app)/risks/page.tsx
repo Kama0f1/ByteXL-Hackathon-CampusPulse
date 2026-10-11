@@ -6,7 +6,7 @@ import { DepartmentRiskChart } from "@/components/charts/DepartmentRiskChart";
 import { DriverBars } from "@/components/risks/DriverBars";
 import { RiskMatrixExplorer } from "@/components/risks/RiskMatrixExplorer";
 import { Avatar } from "@/components/ui/Avatar";
-import { DemoFootnote, SimulatedTag } from "@/components/ui/DemoBadge";
+import { DemoFootnote } from "@/components/ui/DemoBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
@@ -57,7 +57,7 @@ export default async function RisksPage() {
         <Panel index={2} title="What is driving risk across campus?" description="The main reason behind each student at medium or high risk.">
           <DriverBars drivers={report.drivers} />
         </Panel>
-        <Panel index={3} title="Is risk going up or down?" description="Students flagged high risk at the end of each week." action={<SimulatedTag />}>
+        <Panel index={3} title="Is risk going up or down?" description="Students flagged high risk at the end of each week.">
           <LineChart
             ariaLabel="High-risk students by week"
             labels={weeks}

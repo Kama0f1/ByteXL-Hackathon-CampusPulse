@@ -8,7 +8,9 @@ import { AttentionList } from "@/components/overview/AttentionList";
 import { DepartmentRiskChart } from "@/components/charts/DepartmentRiskChart";
 import { FollowUpActions } from "@/components/overview/FollowUpActions";
 import { StartHere } from "@/components/overview/StartHere";
-import { DemoFootnote, SimulatedTag } from "@/components/ui/DemoBadge";
+import { InsightGrid } from "@/components/overview/InsightGrid";
+import { DataNote } from "@/components/ui/DataNote";
+import { DemoFootnote } from "@/components/ui/DemoBadge";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
@@ -70,7 +72,7 @@ export default async function OverviewPage() {
         }
       />
 
-      <p className="flex flex-wrap items-center gap-2 text-xs text-ink-3"><SimulatedTag /> Weekly comparisons, sparklines and change alerts use generated history. Current scores use the supplied records.</p>
+      <DataNote>Weekly comparisons, sparklines and change alerts use generated history. Current scores use the supplied records.</DataNote>
       <StartHere alerts={newAlerts.length} urgent={newAlerts.filter((a) => a.severity === "high").length} unassigned={unassigned} segments={data.segments.length} />
 
       <section aria-label="Key indicators" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -134,19 +136,7 @@ export default async function OverviewPage() {
 
       {data.insights?.length ? (
         <Panel index={5} title="What the combined data shows" description="Findings that only appear once the seven sources are joined on student ID.">
-          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {data.insights.map((insight) => (
-              <li key={insight.id} className="flex flex-col rounded-2xl border border-line bg-surface-2 p-4">
-                <p
-                  className={`tabular text-2xl font-semibold tracking-tight ${insight.domain === "academic" ? "text-academic" : insight.domain === "placement" ? "text-placement" : "text-ink"}`}
-                >
-                  {insight.metric}
-                </p>
-                <p className="mt-1 text-sm font-semibold leading-snug text-ink">{insight.title}</p>
-                <p className="mt-1 text-xs leading-relaxed text-ink-3">{insight.detail}</p>
-              </li>
-            ))}
-          </ul>
+          <InsightGrid insights={data.insights} />
         </Panel>
       ) : null}
 
@@ -156,7 +146,6 @@ export default async function OverviewPage() {
           className="xl:col-span-7"
           title="Is risk going up or down?"
           description="Students flagged high risk at the end of each teaching week, academic and placement tracked separately."
-          action={<SimulatedTag />}
         >
           <LineChart
             ariaLabel="High-risk students by week"
@@ -188,7 +177,6 @@ export default async function OverviewPage() {
           className="xl:col-span-7"
           title="Which areas are slipping?"
           description="Share of students flagged in each of the seven data areas, week by week."
-          action={<SimulatedTag />}
         >
           <SignalHeatmap rows={data.signalChart} weeks={weeks} students={summary.studentsTracked} />
         </Panel>

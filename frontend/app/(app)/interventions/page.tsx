@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { InterventionBoard } from "@/components/interventions/InterventionBoard";
-import { DemoFootnote, SimulatedTag } from "@/components/ui/DemoBadge";
+import { DemoFootnote } from "@/components/ui/DemoBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { formatPercent } from "@/lib/format";
@@ -35,7 +35,6 @@ export default async function InterventionsPage() {
       <Panel
         index={2}
         title="Did it work?"
-        action={<SimulatedTag label="Seeded history" />}
         description={
           completed
             ? `${improved} of ${completed} completed follow-ups (${formatPercent(improved / completed)}) were followed by a higher Success Score.`
